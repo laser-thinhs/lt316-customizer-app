@@ -1,0 +1,47 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ProductTemplate {
+  id                    String          @id @default(cuid())
+  name                  String          @unique
+  diameterMm            Float
+  heightMm              Float
+  engravingAreaWidthMm  Float
+  engravingAreaHeightMm Float
+  lightburnDefaults     Json
+  jobs                  JobSubmission[]
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+}
+
+model Asset {
+  id           String          @id @default(cuid())
+  key          String
+  url          String
+  sizeBytes    Int
+  mimeType     String
+  originalName String
+  customerEmail String?
+  jobs         JobSubmission[]
+  createdAt    DateTime        @default(now())
+}
+
+model JobSubmission {
+  id                String          @id @default(cuid())
+  productTemplateId String
+  assetId           String
+  transform         Json
+  createdAt         DateTime        @default(now())
+
+  productTemplate ProductTemplate @relation(fields: [productTemplateId], references: [id], onDelete: Cascade)
+  asset           Asset           @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([productTemplateId])
+  @@index([assetId])
+}
