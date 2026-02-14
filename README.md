@@ -1,79 +1,116 @@
-# Custom Product Designer Scaffold
+# LT316 Proof Builder (Layer 1)
 
-Production-oriented scaffold for a standalone product customizer MVP.
+Standalone web app foundation for cylindrical product proofing workflows.
 
 ## Stack
-
-- Next.js (TypeScript, App Router)
+- Next.js (App Router) + TypeScript
 - Tailwind CSS
 - Prisma + PostgreSQL
-- Auth scaffold (email magic-link placeholder)
-- Upload abstraction (S3-compatible + local fallback)
+- Zod validation
+- Zustand for lightweight UI state
 
-## MVP Included
+## Layer 1 features
+- Product profiles + machine profiles in Postgres
+- Design job creation and retrieval APIs
+- Placement JSON validated with Zod (all units in **millimeters**)
+- Minimal mobile-first UI:
+  - product selector
+  - New Job button
+  - job summary card
+- Stubbed file upload interface (no cloud storage yet)
+- Tests:
+  - validator test
+  - API route test
 
-- Product template data model with LightBurn defaults.
-- Artwork upload API for SVG/PNG with file type + size validation.
-- 2D placement tool with mm units, X/Y offset, rotation, and safe-area overlay.
-- Job submission persistence with final transform values.
-- Admin page for template + default laser setting management.
-- JSON export endpoint for LightBurn conversion pipeline handoff.
+## Environment variables
 
-## Local Setup
-
-1. Install dependencies:
-
-```bash
-npm install
-```
-
-2. Copy environment values:
+Create `.env` from `.env.example`:
 
 ```bash
 cp .env.example .env
 ```
 
-3. Start PostgreSQL:
+Required:
+
+- `DATABASE_URL`
+
+Example:
 
 ```bash
-docker compose up -d
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/lt316_proof_builder?schema=public"
 ```
 
-4. Generate Prisma client and run migrations:
+## Setup
 
 ```bash
+npm install
 npm run prisma:generate
-npx prisma migrate dev --name init
+npm run prisma:migrate
+npm run prisma:seed
+npm run dev
 ```
 
-5. Seed initial template (`20oz tumbler`):
+App runs at: http://localhost:3000
+
+## Migration commands
+
+Development migration:
+
+```bash
+npm run prisma:migrate -- --name init
+```
+
+Deploy migrations (non-dev environments):
+
+```bash
+npm run prisma:deploy
+```
+
+## Seed command
 
 ```bash
 npm run prisma:seed
 ```
 
-6. Run app:
+## Test commands
 
 ```bash
-npm run dev
+npm test
+npm run test:watch
 ```
-
-Open:
-- Designer: `http://localhost:3000`
-- Admin: `http://localhost:3000/admin`
-- Sign-in scaffold: `http://localhost:3000/auth/sign-in`
 
 ## API Endpoints
 
-- `GET /api/templates`
-- `POST /api/admin/templates`
-- `POST /api/uploads`
-- `POST /api/jobs`
-- `GET /api/jobs/:id/export`
-- `POST /api/auth/magic-link`
+### `GET /api/product-profiles`
+List product profiles.
 
-## Suggested Initial Commit Messages
+### `GET /api/product-profiles/:id`
+Get one product profile by ID.
 
-1. `feat: scaffold Next.js custom product designer MVP`
-2. `chore: add Prisma/Postgres, upload storage abstraction, and seed data`
-3. `feat: add canvas placement tool, admin template manager, and export API`
+### `POST /api/design-jobs`
+Create design job.
+
+Body:
+
+```json
+{
+  "orderRef": "optional-order-ref",
+  "productProfileId": "cuid",
+  "machineProfileId": "cuid-or-seeded-id",
+  "placementJson": {
+    "widthMm": 50,
+    "heightMm": 50,
+    "offsetXMm": 0,
+    "offsetYMm": 0,
+    "rotationDeg": 0,
+    "anchor": "center"
+  }
+}
+```
+
+### `GET /api/design-jobs/:id`
+Get one design job by ID.
+
+## Notes
+- `placementJson` is validated via Zod and intentionally stored in millimeters.
+- File uploads are intentionally stubbed for Layer 1.
