@@ -7,41 +7,81 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model ProductTemplate {
-  id                    String          @id @default(cuid())
-  name                  String          @unique
-  diameterMm            Float
-  heightMm              Float
-  engravingAreaWidthMm  Float
-  engravingAreaHeightMm Float
-  lightburnDefaults     Json
-  jobs                  JobSubmission[]
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
+enum DesignJobStatus {
+  draft
+  approved
+  exported
+}
+
+enum AssetKind {
+  original
+  normalized
+  preview
+}
+
+model ProductProfile {
+  id                     String   @id @default(cuid())
+  name                   String
+  sku                    String   @unique
+  diameterMm             Decimal  @db.Decimal(10, 3)
+  heightMm               Decimal  @db.Decimal(10, 3)
+  engraveZoneWidthMm     Decimal  @db.Decimal(10, 3)
+  engraveZoneHeightMm    Decimal  @db.Decimal(10, 3)
+  seamReference          String
+  toolOutlineSvgPath     String
+  defaultSettingsProfile Json
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  designJobs             DesignJob[]
+}
+
+model MachineProfile {
+  id                String   @id @default(cuid())
+  name              String
+  laserType         String
+  lens              String
+  rotaryModeDefault String
+  powerDefault      Decimal  @db.Decimal(10, 3)
+  speedDefault      Decimal  @db.Decimal(10, 3)
+  frequencyDefault  Decimal  @db.Decimal(10, 3)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  designJobs        DesignJob[]
+}
+
+model DesignJob {
+  id               String          @id @default(cuid())
+  orderRef         String?
+  productProfileId String
+  machineProfileId String
+  status           DesignJobStatus @default(draft)
+  placementJson    Json
+  previewImagePath String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  productProfile ProductProfile @relation(fields: [productProfileId], references: [id], onDelete: Restrict)
+  machineProfile MachineProfile @relation(fields: [machineProfileId], references: [id], onDelete: Restrict)
+  assets         Asset[]
+
+  @@index([productProfileId])
+  @@index([machineProfileId])
+  @@index([status])
 }
 
 model Asset {
-  id           String          @id @default(cuid())
-  key          String
-  url          String
-  sizeBytes    Int
-  mimeType     String
-  originalName String
-  customerEmail String?
-  jobs         JobSubmission[]
-  createdAt    DateTime        @default(now())
-}
+  id          String    @id @default(cuid())
+  designJobId String
+  kind        AssetKind
+  mimeType    String
+  filePath    String
+  widthPx     Int?
+  heightPx    Int?
+  createdAt   DateTime  @default(now())
 
-model JobSubmission {
-  id                String          @id @default(cuid())
-  productTemplateId String
-  assetId           String
-  transform         Json
-  createdAt         DateTime        @default(now())
+  designJob DesignJob @relation(fields: [designJobId], references: [id], onDelete: Cascade)
 
-  productTemplate ProductTemplate @relation(fields: [productTemplateId], references: [id], onDelete: Cascade)
-  asset           Asset           @relation(fields: [assetId], references: [id], onDelete: Cascade)
-
-  @@index([productTemplateId])
-  @@index([assetId])
+  @@index([designJobId])
 }
