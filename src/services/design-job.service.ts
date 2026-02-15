@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/errors";
-import { createDesignJobSchema, CreateDesignJobInput } from "@/schemas/design-job";
+import {
+  createDesignJobSchema,
+  CreateDesignJobInput,
+  updatePlacementSchema,
+  UpdatePlacementInput
+} from "@/schemas/design-job";
 
 export async function createDesignJob(rawInput: unknown) {
   const input: CreateDesignJobInput = createDesignJobSchema.parse(rawInput);
@@ -25,6 +30,29 @@ export async function createDesignJob(rawInput: unknown) {
     include: {
       productProfile: true,
       machineProfile: true
+    }
+  });
+
+  return job;
+}
+
+export async function updateDesignJobPlacement(id: string, rawInput: unknown) {
+  const input: UpdatePlacementInput = updatePlacementSchema.parse(rawInput);
+
+  const existing = await prisma.designJob.findUnique({ where: { id } });
+  if (!existing) {
+    throw new AppError("DesignJob not found", 404, "NOT_FOUND");
+  }
+
+  const job = await prisma.designJob.update({
+    where: { id },
+    data: {
+      placementJson: input.placementJson
+    },
+    include: {
+      productProfile: true,
+      machineProfile: true,
+      assets: true
     }
   });
 

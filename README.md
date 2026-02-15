@@ -1,4 +1,4 @@
-# LT316 Proof Builder (Layer 1)
+# LT316 Proof Builder (Layer 1 / 1.5 Prep)
 
 Standalone web app foundation for cylindrical product proofing workflows.
 
@@ -9,18 +9,14 @@ Standalone web app foundation for cylindrical product proofing workflows.
 - Zod validation
 - Zustand for lightweight UI state
 
-## Layer 1 features
+## Current Layer status
 - Product profiles + machine profiles in Postgres
 - Design job creation and retrieval APIs
 - Placement JSON validated with Zod (all units in **millimeters**)
-- Minimal mobile-first UI:
-  - product selector
-  - New Job button
-  - job summary card
+- Placement editor panel (2D numeric controls)
 - Stubbed file upload interface (no cloud storage yet)
-- Tests:
-  - validator test
-  - API route test
+- Health endpoint with DB connectivity check
+- Tests for schemas, API routes, and UI happy path
 
 ## Environment variables
 
@@ -52,34 +48,60 @@ npm run dev
 
 App runs at: http://localhost:3000
 
-## Migration commands
-
-Development migration:
+## Health check
 
 ```bash
-npm run prisma:migrate -- --name init
+curl http://localhost:3000/api/health
 ```
 
-Deploy migrations (non-dev environments):
+Expected response (healthy):
 
-```bash
-npm run prisma:deploy
+```json
+{
+  "data": {
+    "status": "ok",
+    "checks": {
+      "app": "ok",
+      "database": "ok"
+    }
+  }
+}
 ```
 
-## Seed command
+## Troubleshooting
+
+### PowerShell execution policy (`npm.ps1` blocked)
+If Windows PowerShell blocks npm scripts with an execution-policy error:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+Or run scripts through Command Prompt/Git Bash/WSL.
+
+### Docker + WSL notes
+- If running Postgres via Docker Desktop, ensure the container is exposed to your WSL distro.
+- Inside WSL, `localhost:5432` usually works when Docker Desktop WSL integration is enabled.
+- If not, use the host IP from `/etc/resolv.conf` and update `DATABASE_URL`.
+
+### DB reset workflow
+When schema or seed data gets out of sync:
 
 ```bash
+npm run prisma:migrate reset -- --force
 npm run prisma:seed
 ```
 
-## Test commands
+Then restart dev server:
 
 ```bash
-npm test
-npm run test:watch
+npm run dev
 ```
 
 ## API Endpoints
+
+### `GET /api/health`
+App + database connectivity status.
 
 ### `GET /api/product-profiles`
 List product profiles.
@@ -90,27 +112,21 @@ Get one product profile by ID.
 ### `POST /api/design-jobs`
 Create design job.
 
-Body:
-
-```json
-{
-  "orderRef": "optional-order-ref",
-  "productProfileId": "cuid",
-  "machineProfileId": "cuid-or-seeded-id",
-  "placementJson": {
-    "widthMm": 50,
-    "heightMm": 50,
-    "offsetXMm": 0,
-    "offsetYMm": 0,
-    "rotationDeg": 0,
-    "anchor": "center"
-  }
-}
-```
-
 ### `GET /api/design-jobs/:id`
 Get one design job by ID.
 
+### `PATCH /api/design-jobs/:id/placement`
+Update placement JSON for an existing draft/design job.
+
+## Test command matrix
+
+```bash
+npm test                  # all tests
+npm run test -- placement.schema.test.ts
+npm run test -- design-jobs.route.test.ts
+npm run test -- home-page.ui.test.tsx
+```
+
 ## Notes
-- `placementJson` is validated via Zod and intentionally stored in millimeters.
-- File uploads are intentionally stubbed for Layer 1.
+- `placementJson` is validated via Zod and intentionally stored in millimeters only.
+- File uploads are intentionally stubbed for Layer 1 and still not connected to cloud storage.
