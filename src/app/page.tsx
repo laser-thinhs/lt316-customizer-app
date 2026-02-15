@@ -11,16 +11,7 @@ import {
   productProfilesResponseSchema,
   type DesignJob
 } from "@/schemas/api";
-import { placementSchema } from "@/schemas/placement";
-
-const defaultPlacement = {
-  widthMm: 50,
-  heightMm: 50,
-  offsetXMm: 0,
-  offsetYMm: 0,
-  rotationDeg: 0,
-  anchor: "center" as const
-};
+import { createDefaultPlacementDocument } from "@/schemas/placement";
 
 const machine = {
   id: "fiber-galvo-300-lens-default",
@@ -72,18 +63,13 @@ export default function HomePage() {
     setCreatingJob(true);
 
     try {
-      const parsedPlacement = placementSchema.safeParse(defaultPlacement);
-      if (!parsedPlacement.success) {
-        throw new Error("Default placement is invalid.");
-      }
-
       const res = await fetch("/api/design-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           productProfileId: selectedProductId,
           machineProfileId: machine.id,
-          placementJson: parsedPlacement.data
+          placementJson: createDefaultPlacementDocument()
         })
       });
 
@@ -109,7 +95,7 @@ export default function HomePage() {
         <header className="space-y-1">
           <h1 className="text-xl font-bold tracking-tight">LT316 Proof Builder</h1>
           <p className="text-sm text-slate-600">
-            Layer 1 foundation: profile selection + draft design job creation.
+            Layer 2.1 foundation: text objects, typography controls, and deterministic mm placement.
           </p>
         </header>
 

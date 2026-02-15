@@ -1,2 +1,4 @@
-Reflect.set(process.env, "NODE_ENV", "test");
-process.env.DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://test:test@localhost:5432/test";
+Object.assign(process.env, {
+  NODE_ENV: "test",
+  DATABASE_URL: process.env.DATABASE_URL ?? "postgresql://test:test@localhost:5432/test",
+});
