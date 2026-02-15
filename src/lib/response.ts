@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { AppError } from "./errors";
+import { toApiErrorShape } from "./errors";
 
 export function ok<T>(data: T, status = 200) {
   return NextResponse.json({ data }, { status });
@@ -20,26 +20,6 @@ export function fail(error: unknown) {
     );
   }
 
-  if (error instanceof AppError) {
-    return NextResponse.json(
-      {
-        error: {
-          code: error.code,
-          message: error.message,
-          details: error.details
-        }
-      },
-      { status: error.statusCode }
-    );
-  }
-
-  return NextResponse.json(
-    {
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Something went wrong."
-      }
-    },
-    { status: 500 }
-  );
+  const normalized = toApiErrorShape(error);
+  return NextResponse.json(normalized.body, { status: normalized.status });
 }
