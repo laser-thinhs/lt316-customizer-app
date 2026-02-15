@@ -1,0 +1,25 @@
+{
+  "name": "Name + Monogram Arc",
+  "slug": "name-monogram-arc",
+  "productProfileId": "prod_20oz",
+  "placementDocument": {
+    "version": 2,
+    "zone": { "widthMm": 238, "heightMm": 100 },
+    "objects": [
+      {
+        "id": "name_text",
+        "type": "text",
+        "text": "{{full_name | default:\"Customer\"}}",
+        "xMm": 40,
+        "yMm": 30,
+        "widthMm": 150,
+        "heightMm": 20,
+        "zIndex": 1
+      }
+    ]
+  },
+  "tokenDefinitions": [
+    { "key": "full_name", "label": "Full Name", "required": true },
+    { "key": "order_number", "label": "Order #", "required": false }
+  ]
+}
