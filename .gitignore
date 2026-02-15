@@ -1,8 +1,29 @@
-node_modules
-.next
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# Env / secrets
 .env
-.env.local
-dist
-coverage
+.env.*
+!.env.example
+
+# Logs / coverage
 *.log
-uploads
+coverage/
+playwright-report/
+test-results/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Optional
+*.local
