@@ -19,6 +19,20 @@ enum AssetKind {
   preview
 }
 
+enum BatchRunStatus {
+  queued
+  processing
+  completed
+  failed
+  partial
+}
+
+enum BatchItemStatus {
+  success
+  failed
+  skipped
+}
+
 model ProductProfile {
   id                     String   @id @default(cuid())
   name                   String
@@ -34,6 +48,8 @@ model ProductProfile {
   updatedAt              DateTime @updatedAt
 
   designJobs             DesignJob[]
+  templates              Template[]
+  batchRuns              BatchRun[]
 }
 
 model MachineProfile {
@@ -59,16 +75,23 @@ model DesignJob {
   status           DesignJobStatus @default(draft)
   placementJson    Json
   previewImagePath String?
+  proofImagePath   String?
+  placementHash    String?
+  templateId       String?
+  batchRunItemId   String?         @unique
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
   productProfile ProductProfile @relation(fields: [productProfileId], references: [id], onDelete: Restrict)
   machineProfile MachineProfile @relation(fields: [machineProfileId], references: [id], onDelete: Restrict)
+  template      Template?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  batchRunItem  BatchRunItem?  @relation(fields: [batchRunItemId], references: [id], onDelete: SetNull)
   assets         Asset[]
 
   @@index([productProfileId])
   @@index([machineProfileId])
   @@index([status])
+  @@index([templateId])
 }
 
 model Asset {
@@ -84,4 +107,99 @@ model Asset {
   designJob DesignJob @relation(fields: [designJobId], references: [id], onDelete: Cascade)
 
   @@index([designJobId])
+}
+
+model Template {
+  id                String   @id @default(cuid())
+  name              String
+  slug              String   @unique
+  description       String?
+  productProfileId  String?
+  placementDocument Json
+  previewImagePath  String?
+  tags              String[] @default([])
+  version           Int      @default(1)
+  isActive          Boolean  @default(true)
+  createdBy         String
+  templateHash      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  productProfile    ProductProfile?           @relation(fields: [productProfileId], references: [id], onDelete: SetNull)
+  tokenDefinitions  TemplateTokenDefinition[]
+  designJobs        DesignJob[]
+  batchRuns         BatchRun[]
+
+  @@index([productProfileId])
+  @@index([isActive])
+}
+
+model TemplateTokenDefinition {
+  id            String   @id @default(cuid())
+  templateId    String
+  key           String
+  label         String
+  required      Boolean  @default(false)
+  defaultValue  String?
+  validatorRegex String?
+  createdAt     DateTime @default(now())
+
+  template      Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, key])
+  @@index([templateId])
+}
+
+model BatchRun {
+  id               String         @id @default(cuid())
+  templateId       String
+  productProfileId String
+  sourceCsvPath    String
+  totalRows        Int
+  validRows        Int            @default(0)
+  invalidRows      Int            @default(0)
+  status           BatchRunStatus @default(queued)
+  policyMode       String         @default("STRICT")
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  summaryJson      Json?
+  createdAt        DateTime       @default(now())
+
+  template         Template       @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  productProfile   ProductProfile @relation(fields: [productProfileId], references: [id], onDelete: Restrict)
+  items            BatchRunItem[]
+
+  @@index([templateId])
+  @@index([status])
+}
+
+model BatchRunItem {
+  id                 String         @id @default(cuid())
+  batchRunId         String
+  rowIndex           Int
+  rowDataJson        Json
+  resolvedTokensJson Json?
+  status             BatchItemStatus @default(skipped)
+  warningsJson       Json?
+  errorMessage       String?
+  createdAt          DateTime       @default(now())
+
+  batchRun           BatchRun       @relation(fields: [batchRunId], references: [id], onDelete: Cascade)
+  designJob          DesignJob?
+
+  @@unique([batchRunId, rowIndex])
+  @@index([batchRunId, status])
+}
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  action        String
+  entityType    String
+  entityId      String?
+  correlationId String?
+  payloadJson   Json?
+  createdAt     DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([correlationId])
 }
