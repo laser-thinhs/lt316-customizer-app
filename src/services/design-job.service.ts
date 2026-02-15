@@ -25,6 +25,7 @@ export async function createDesignJob(rawInput: unknown) {
       machineProfileId: input.machineProfileId,
       placementJson: input.placementJson,
       previewImagePath: input.previewImagePath,
+      proofImagePath: input.previewImagePath,
       status: "draft"
     },
     include: {
@@ -74,4 +75,14 @@ export async function getDesignJobById(id: string) {
   }
 
   return job;
+}
+
+
+export async function getDesignJobProof(id: string) {
+  const job = await getDesignJobById(id);
+  return {
+    designJobId: job.id,
+    proofImagePath: job.proofImagePath ?? job.previewImagePath,
+    placementHash: job.placementHash ?? null
+  };
 }
