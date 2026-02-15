@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { placementSchema } from "./placement";
+import { placementDocumentSchema } from "./placement";
 
 export const productProfileSchema = z.object({
   id: z.string(),
@@ -21,7 +21,7 @@ export const designJobSchema = z.object({
   id: z.string(),
   status: z.string(),
   createdAt: z.string(),
-  placementJson: placementSchema,
+  placementJson: placementDocumentSchema,
   productProfile: productProfileSchema,
   machineProfile: machineProfileSchema
 });

@@ -1,55 +1,63 @@
-import { placementSchema } from "@/schemas/placement";
+import { placementDocumentSchema, upgradePlacementToV2 } from "@/schemas/placement";
 
-describe("placementSchema", () => {
-  it("accepts valid placement in mm", () => {
-    const result = placementSchema.safeParse({
-      widthMm: 60,
-      heightMm: 40,
-      offsetXMm: 2,
-      offsetYMm: -1.5,
-      rotationDeg: 15,
-      anchor: "center"
+describe("placement schema v2", () => {
+  it("accepts valid v2 placement with text arc", () => {
+    const result = placementDocumentSchema.safeParse({
+      version: 2,
+      canvas: { widthMm: 60, heightMm: 40 },
+      machine: { strokeWidthWarningThresholdMm: 0.12 },
+      objects: [
+        {
+          id: "text_1",
+          kind: "text_arc",
+          content: "HELLO",
+          fontFamily: "Inter",
+          fontWeight: 700,
+          fontStyle: "normal",
+          fontSizeMm: 4,
+          lineHeight: 1.2,
+          letterSpacingMm: 0.2,
+          horizontalAlign: "center",
+          verticalAlign: "middle",
+          rotationDeg: 0,
+          anchor: "center",
+          offsetXMm: 5,
+          offsetYMm: 4,
+          boxWidthMm: 20,
+          boxHeightMm: 8,
+          fillMode: "fill",
+          strokeWidthMm: 0,
+          mirrorX: false,
+          mirrorY: false,
+          zIndex: 1,
+          allCaps: true,
+          arc: {
+            radiusMm: 20,
+            startAngleDeg: -60,
+            endAngleDeg: 60,
+            direction: "cw",
+            baselineMode: "center",
+            seamWrapMode: "disallow"
+          }
+        }
+      ]
     });
 
     expect(result.success).toBe(true);
   });
 
-  it("rejects zero width", () => {
-    const result = placementSchema.safeParse({
-      widthMm: 0,
+  it("upgrades legacy placement payload to v2", () => {
+    const upgraded = upgradePlacementToV2({
+      widthMm: 60,
       heightMm: 40,
-      offsetXMm: 0,
-      offsetYMm: 0,
-      rotationDeg: 0,
+      offsetXMm: 2,
+      offsetYMm: -1,
+      rotationDeg: 5,
       anchor: "center"
     });
 
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects negative height", () => {
-    const result = placementSchema.safeParse({
-      widthMm: 20,
-      heightMm: -10,
-      offsetXMm: 0,
-      offsetYMm: 0,
-      rotationDeg: 0,
-      anchor: "top-left"
-    });
-
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects invalid anchor", () => {
-    const result = placementSchema.safeParse({
-      widthMm: 60,
-      heightMm: 40,
-      offsetXMm: 0,
-      offsetYMm: 0,
-      rotationDeg: 0,
-      anchor: "middle"
-    });
-
-    expect(result.success).toBe(false);
+    expect(upgraded.version).toBe(2);
+    expect(upgraded.canvas.widthMm).toBe(60);
+    expect(upgraded.objects[0]?.kind).toBe("image");
   });
 });
