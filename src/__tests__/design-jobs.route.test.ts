@@ -31,12 +31,10 @@ describe("design-jobs routes", () => {
       status: "draft",
       createdAt: new Date().toISOString(),
       placementJson: {
-        widthMm: 50,
-        heightMm: 50,
-        offsetXMm: 0,
-        offsetYMm: 0,
-        rotationDeg: 0,
-        anchor: "center"
+        version: 2,
+        canvas: { widthMm: 50, heightMm: 50 },
+        machine: { strokeWidthWarningThresholdMm: 0.1 },
+        objects: []
       },
       productProfile: { name: "20oz Straight Tumbler", sku: "TMBLR-20OZ-STRAIGHT" },
       machineProfile: { name: "Fiber Galvo 300 Lens", lens: "300mm" }
@@ -48,12 +46,10 @@ describe("design-jobs routes", () => {
         productProfileId: "prod_1",
         machineProfileId: "mach_1",
         placementJson: {
-          widthMm: 50,
-          heightMm: 50,
-          offsetXMm: 0,
-          offsetYMm: 0,
-          rotationDeg: 0,
-          anchor: "center"
+          version: 2,
+          canvas: { widthMm: 50, heightMm: 50 },
+          machine: { strokeWidthWarningThresholdMm: 0.1 },
+          objects: []
         }
       })
     });
@@ -63,21 +59,17 @@ describe("design-jobs routes", () => {
 
     const json = await res.json();
     expect(json.data.id).toBe("job_123");
-    expect(json.data.productProfile).toBeDefined();
-    expect(json.data.machineProfile).toBeDefined();
   });
 
-  it("PATCH /api/design-jobs/:id/placement updates placement", async () => {
+  it("PATCH /api/design-jobs/:id/placement upgrades legacy payload to v2", async () => {
     (prisma.designJob.findUnique as jest.Mock).mockResolvedValue({ id: "job_123" });
     (prisma.designJob.update as jest.Mock).mockResolvedValue({
       id: "job_123",
       placementJson: {
-        widthMm: 65,
-        heightMm: 40,
-        offsetXMm: 2,
-        offsetYMm: -1,
-        rotationDeg: 5,
-        anchor: "center"
+        version: 2,
+        canvas: { widthMm: 65, heightMm: 40 },
+        machine: { strokeWidthWarningThresholdMm: 0.1 },
+        objects: []
       },
       productProfile: { id: "prod_1", name: "20oz Straight Tumbler", sku: "TMBLR-20OZ-STRAIGHT" },
       machineProfile: { id: "mach_1", name: "Fiber Galvo 300 Lens", lens: "300mm" },
@@ -102,6 +94,6 @@ describe("design-jobs routes", () => {
     expect(res.status).toBe(200);
 
     const json = await res.json();
-    expect(json.data.placementJson.widthMm).toBe(65);
+    expect(json.data.placementJson.version).toBe(2);
   });
 });

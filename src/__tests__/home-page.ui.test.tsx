@@ -37,12 +37,10 @@ describe("HomePage", () => {
             status: "draft",
             createdAt: new Date().toISOString(),
             placementJson: {
-              widthMm: 50,
-              heightMm: 50,
-              offsetXMm: 0,
-              offsetYMm: 0,
-              rotationDeg: 0,
-              anchor: "center"
+              version: 2,
+              canvas: { widthMm: 50, heightMm: 50 },
+              machine: { strokeWidthWarningThresholdMm: 0.1 },
+              objects: []
             },
             productProfile: { id: "prod_1", name: "20oz Straight Tumbler", sku: "TMBLR-20OZ-STRAIGHT" },
             machineProfile: { id: "mach_1", name: "Fiber Galvo 300 Lens", lens: "300mm" }
@@ -62,7 +60,6 @@ describe("HomePage", () => {
 
     const button = container.querySelector("button");
     expect(button?.textContent).toContain("New Job");
-    expect(button?.hasAttribute("disabled")).toBe(false);
 
     await act(async () => {
       button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/errors";
+import { parsePlacementDocument } from "@/lib/placement/document";
 import {
   createDesignJobSchema,
   CreateDesignJobInput,
@@ -18,12 +19,14 @@ export async function createDesignJob(rawInput: unknown) {
   if (!product) throw new AppError("Invalid productProfileId", 400, "INVALID_PRODUCT_PROFILE");
   if (!machine) throw new AppError("Invalid machineProfileId", 400, "INVALID_MACHINE_PROFILE");
 
+  const placementJson = parsePlacementDocument(input.placementJson);
+
   const job = await prisma.designJob.create({
     data: {
       orderRef: input.orderRef,
       productProfileId: input.productProfileId,
       machineProfileId: input.machineProfileId,
-      placementJson: input.placementJson,
+      placementJson,
       previewImagePath: input.previewImagePath,
       status: "draft"
     },
@@ -44,10 +47,12 @@ export async function updateDesignJobPlacement(id: string, rawInput: unknown) {
     throw new AppError("DesignJob not found", 404, "NOT_FOUND");
   }
 
+  const placementJson = parsePlacementDocument(input.placementJson);
+
   const job = await prisma.designJob.update({
     where: { id },
     data: {
-      placementJson: input.placementJson
+      placementJson
     },
     include: {
       productProfile: true,
@@ -73,5 +78,5 @@ export async function getDesignJobById(id: string) {
     throw new AppError("DesignJob not found", 404, "NOT_FOUND");
   }
 
-  return job;
+  return { ...job, placementJson: parsePlacementDocument(job.placementJson) };
 }
