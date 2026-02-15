@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ProductSelector from "@/components/ProductSelector";
 import JobSummaryCard from "@/components/JobSummaryCard";
 import PlacementEditor from "@/components/PlacementEditor";
@@ -29,10 +29,19 @@ export default function HomePage() {
 
   const { isCreatingJob, setCreatingJob } = useUIStore();
 
+  // Always compute a valid selected id from current products
+  const resolvedSelectedProductId = useMemo(() => {
+    if (products.length === 0) return "";
+    return products.some((p) => p.id === selectedProductId)
+      ? selectedProductId
+      : products[0].id;
+  }, [products, selectedProductId]);
+
   useEffect(() => {
     (async () => {
       setLoadingProducts(true);
       setProductsError(null);
+
       try {
         const res = await fetch("/api/product-profiles");
         const json: unknown = await res.json();
@@ -48,7 +57,11 @@ export default function HomePage() {
 
         const items = parsed.data.data;
         setProducts(items);
-        if (items[0]) setSelectedProductId(items[0].id);
+
+        // keep previous selection if still valid, else first item
+        setSelectedProductId((prev) =>
+          items.some((p) => p.id === prev) ? prev : (items[0]?.id ?? "")
+        );
       } catch (fetchError) {
         setProductsError(fetchError instanceof Error ? fetchError.message : "Unknown error");
       } finally {
@@ -58,7 +71,13 @@ export default function HomePage() {
   }, []);
 
   const createJob = async () => {
-    if (!selectedProductId || !machine?.id) return;
+    const productProfileId = resolvedSelectedProductId;
+
+    if (!productProfileId || !machine?.id) {
+      setError("No valid product profile selected.");
+      return;
+    }
+
     setError(null);
     setCreatingJob(true);
 
@@ -67,14 +86,18 @@ export default function HomePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          productProfileId: selectedProductId,
+          productProfileId,
           machineProfileId: machine.id,
           placementJson: createDefaultPlacementDocument()
         })
       });
 
       const json: unknown = await res.json();
-      if (!res.ok) throw new Error((json as { error?: { message?: string } })?.error?.message || "Failed to create job");
+      if (!res.ok) {
+        throw new Error(
+          (json as { error?: { message?: string } })?.error?.message || "Failed to create job"
+        );
+      }
 
       const parsed = designJobResponseSchema.safeParse(json);
       if (!parsed.success) {
@@ -102,7 +125,7 @@ export default function HomePage() {
         <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <ProductSelector
             products={products}
-            value={selectedProductId}
+            value={resolvedSelectedProductId}
             onChange={setSelectedProductId}
             isLoading={isLoadingProducts}
             error={productsError}
@@ -110,7 +133,12 @@ export default function HomePage() {
 
           <button
             onClick={createJob}
-            disabled={isCreatingJob || !selectedProductId || isLoadingProducts || Boolean(productsError)}
+            disabled={
+              isCreatingJob ||
+              !resolvedSelectedProductId ||
+              isLoadingProducts ||
+              Boolean(productsError)
+            }
             className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isCreatingJob ? "Creating Job..." : "New Job"}
