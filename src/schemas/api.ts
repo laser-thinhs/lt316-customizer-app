@@ -30,5 +30,25 @@ export const designJobResponseSchema = z.object({
   data: designJobSchema
 });
 
+export const preflightIssueSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  objectId: z.string().optional()
+});
+
+export const preflightResponseSchema = z.object({
+  data: z.object({
+    ok: z.boolean(),
+    errors: z.array(preflightIssueSchema),
+    warnings: z.array(preflightIssueSchema),
+    metrics: z.object({
+      wrapWidthMm: z.number(),
+      seamRiskCount: z.number().int(),
+      minStrokeMmObserved: z.number().optional()
+    })
+  })
+});
+
 export type ProductProfile = z.infer<typeof productProfileSchema>;
 export type DesignJob = z.infer<typeof designJobSchema>;
+export type PreflightResponse = z.infer<typeof preflightResponseSchema>;
