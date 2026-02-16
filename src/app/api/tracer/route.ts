@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { normalizeTracerError, traceRasterToSvg } from "../../../../lib/tracing-core";
+import { normalizeTracerError } from "../../../../lib/tracing-core";
+import { getTracerProvider } from "../../../../lib/tracer-provider";
+import { createTracerAsset } from "@/lib/tracer-asset-store";
 
 const TRACER_TIMEOUT_MS = Number(process.env.TRACER_TIMEOUT_MS ?? 15000);
 
@@ -25,7 +27,7 @@ function fail(requestId: string, status: number, code: string, message: string, 
 }
 
 export async function POST(req: Request) {
-  const requestId = randomUUID();
+  const requestId = req.headers.get("x-request-id") ?? randomUUID();
   const started = Date.now();
   console.info("[tracer] request:start", { requestId });
 
@@ -48,16 +50,31 @@ export async function POST(req: Request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    const provider = getTracerProvider();
 
     const result = await Promise.race([
-      traceRasterToSvg({ buffer, mime: file.type, filename: file.name }, settings),
+      provider.traceSync({ buffer, mime: file.type, filename: file.name }, settings, { requestId }),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error("TRACER_TIMEOUT")), TRACER_TIMEOUT_MS)
       )
     ]);
 
+    const svgAsset = await createTracerAsset({
+      buffer: Buffer.from(result.svg, "utf8"),
+      mimeType: "image/svg+xml",
+      originalName: `${file.name || "trace"}.svg`
+    });
+
     console.info("[tracer] request:done", { requestId, elapsedMs: Date.now() - started });
-    const body: TracerApiResponse = { requestId, ok: true, result };
+    const body: TracerApiResponse = {
+      requestId,
+      ok: true,
+      result: {
+        ...result,
+        svgUrl: svgAsset.url,
+        outputSvgAssetId: svgAsset.id
+      }
+    };
     return Response.json(body, { status: 200 });
   } catch (error) {
     if (error instanceof Error && error.message === "TRACER_TIMEOUT") {
