@@ -27,3 +27,6 @@ Thumbs.db
 
 # Optional
 *.local
+
+src/__tests__/__snapshots__/
+storage/

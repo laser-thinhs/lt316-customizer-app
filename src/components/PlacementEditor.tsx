@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ImagePlacementObject,
   PlacementDocument,
   PlacementWrap,
   PlacementObject,
@@ -12,6 +13,10 @@ import {
 import { diameterToWrapWidthMm } from "@/lib/domain/cylinder";
 import { PreflightResponse } from "@/schemas/api";
 import { clampTextPlacementToZone, validateTextPlacement } from "@/lib/geometry/textLayout";
+import type { ExportPayload, PreflightResult } from "@/schemas/preflight-export";
+import { buildDefaultImagePlacement } from "@/lib/placement/image-insertion";
+import { useAutosavePlacement } from "@/hooks/useAutosavePlacement";
+import { arePlacementsEqual } from "@/lib/placement/stableCompare";
 
 type Props = {
   designJobId: string;
@@ -19,6 +24,20 @@ type Props = {
   onUpdated: (placement: PlacementDocument) => void;
   onRunPreflight: () => Promise<PreflightResponse["data"] | null>;
   onExportSvg: () => Promise<void>;
+};
+
+type ApiAsset = {
+  id: string;
+  designJobId: string;
+  kind: string;
+  originalName: string | null;
+  mimeType: string;
+  byteSize: number | null;
+  widthPx: number | null;
+  heightPx: number | null;
+  url: string;
+  path: string;
+  createdAt: string;
 };
 
 const curatedFonts = ["Inter", "Roboto Mono"];
@@ -30,6 +49,10 @@ function randomId() {
 
 function isTextObject(object: PlacementObject | null): object is TextObject {
   return Boolean(object && (object.kind === "text_line" || object.kind === "text_block" || object.kind === "text_arc"));
+}
+
+function isImageObject(object: PlacementObject | null): object is ImagePlacementObject {
+  return Boolean(object && object.kind === "image");
 }
 
 function createTextObject(kind: TextObject["kind"]): TextObject {
@@ -76,13 +99,22 @@ function createTextObject(kind: TextObject["kind"]): TextObject {
   return { ...base, kind };
 }
 
+const roundToHundredth = (value: number) => Math.round(value * 100) / 100;
+
+export default function PlacementEditor({ designJobId, placement, onUpdated }: Props) {
 export default function PlacementEditor({ designJobId, placement, onUpdated, onRunPreflight, onExportSvg }: Props) {
   const [doc, setDoc] = useState<PlacementDocument>(placementDocumentSchema.parse(placement));
+  const [assets, setAssets] = useState<ApiAsset[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [isSaving, setSaving] = useState(false);
+  const [serverDoc, setServerDoc] = useState<PlacementDocument>(placementDocumentSchema.parse(placement));
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(doc.objects[0]?.id ?? null);
   const [undoStack, setUndoStack] = useState<PlacementDocument[]>([]);
   const [redoStack, setRedoStack] = useState<PlacementDocument[]>([]);
+  const [preflight, setPreflight] = useState<PreflightResult | null>(null);
+  const [exportPayload, setExportPayload] = useState<ExportPayload | null>(null);
+  const [batchIds, setBatchIds] = useState("");
+  const [isRunningPreflight, setRunningPreflight] = useState(false);
+  const [isExporting, setExporting] = useState(false);
   const [preflightSummary, setPreflightSummary] = useState<PreflightResponse["data"] | null>(null);
 
   const selected = useMemo(
@@ -99,34 +131,60 @@ export default function PlacementEditor({ designJobId, placement, onUpdated, onR
     });
   }, [selected, doc.canvas, doc.machine.strokeWidthWarningThresholdMm]);
 
+  const groupedIssues = useMemo(() => {
+    const issues = preflight?.issues ?? [];
+    return {
+      error: issues.filter((issue) => issue.severity === "error"),
+      warning: issues.filter((issue) => issue.severity === "warning"),
+      info: issues.filter((issue) => issue.severity === "info")
+    };
+  }, [preflight]);
+
   const commitDoc = (next: PlacementDocument) => {
     setUndoStack((prev) => [...prev.slice(-29), doc]);
     setRedoStack([]);
     setDoc(next);
   };
 
-  useEffect(() => {
-    const timer = setTimeout(async () => {
-      setSaving(true);
-      try {
-        const res = await fetch(`/api/design-jobs/${designJobId}/placement`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ placementJson: doc })
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json?.error?.message || "Failed to save placement");
-        onUpdated(json.data.placementJson as PlacementDocument);
-        setStatusMessage("Autosaved");
-      } catch (error) {
-        setStatusMessage(error instanceof Error ? error.message : "Unknown error");
-      } finally {
-        setSaving(false);
+  const refreshAssets = async () => {
+    try {
+      const res = await fetch(`/api/design-jobs/${designJobId}/assets`);
+      if (!res || typeof res.json !== "function") {
+        setAssets([]);
+        return;
       }
-    }, 350);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error?.message || "Failed to load assets");
+      setAssets(Array.isArray(json.data) ? (json.data as ApiAsset[]) : []);
+    } catch {
+      setAssets([]);
+    }
+  };
 
-    return () => clearTimeout(timer);
-  }, [designJobId, doc, onUpdated]);
+  useEffect(() => {
+    void refreshAssets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [designJobId]);
+
+  const handleRecoveredPlacement = useCallback((localDraft: PlacementDocument) => {
+    setDoc(localDraft);
+  }, []);
+
+  const handleSavedPlacement = useCallback((savedDoc: PlacementDocument) => {
+    if (!arePlacementsEqual(doc, savedDoc)) {
+      setDoc(savedDoc);
+    }
+    setServerDoc(savedDoc);
+    onUpdated(savedDoc);
+  }, [doc, onUpdated]);
+
+  const autosave = useAutosavePlacement({
+    designJobId,
+    placement: doc,
+    serverPlacement: serverDoc,
+    onPlacementRecovered: handleRecoveredPlacement,
+    onPlacementSaved: handleSavedPlacement
+  });
 
   const addText = (kind: TextObject["kind"]) => {
     const obj = createTextObject(kind);
@@ -139,6 +197,63 @@ export default function PlacementEditor({ designJobId, placement, onUpdated, onR
     if (!isTextObject(selected)) return;
     const next = updater(selected);
     commitDoc({ ...doc, objects: doc.objects.map((entry) => (entry.id === selected.id ? next : entry)) });
+  };
+
+  const updateSelectedImage = (patch: Partial<ImagePlacementObject>) => {
+    if (!isImageObject(selected)) return;
+    const next: ImagePlacementObject = {
+      ...selected,
+      ...patch,
+      widthMm: Math.max(0.01, roundToHundredth(Number(patch.widthMm ?? selected.widthMm))),
+      heightMm: Math.max(0.01, roundToHundredth(Number(patch.heightMm ?? selected.heightMm))),
+      xMm: roundToHundredth(Number(patch.xMm ?? selected.xMm)),
+      yMm: roundToHundredth(Number(patch.yMm ?? selected.yMm)),
+      rotationDeg: roundToHundredth(Number(patch.rotationDeg ?? selected.rotationDeg)),
+      opacity: Math.min(1, Math.max(0, Number(patch.opacity ?? selected.opacity)))
+    };
+
+    if (!Number.isFinite(next.xMm) || !Number.isFinite(next.yMm) || !Number.isFinite(next.widthMm) || !Number.isFinite(next.heightMm)) {
+      setStatusMessage("Image placement values must be finite numbers.");
+      return;
+    }
+
+    commitDoc({ ...doc, objects: doc.objects.map((entry) => (entry.id === selected.id ? next : entry)) });
+  };
+
+  const onUploadArtwork = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const form = new FormData();
+      form.append("designJobId", designJobId);
+      form.append("file", file);
+      const res = await fetch("/api/assets", { method: "POST", body: form });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error?.message || "Upload failed");
+      setStatusMessage(`Uploaded ${json.data.originalName ?? file.name}`);
+      await refreshAssets();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Upload failed");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const onAddAssetToCanvas = (asset: ApiAsset) => {
+    try {
+      const imageObj = buildDefaultImagePlacement({
+        assetId: asset.id,
+        widthPx: asset.widthPx,
+        heightPx: asset.heightPx,
+        canvas: doc.canvas
+      });
+      commitDoc({ ...doc, objects: [...doc.objects, imageObj] });
+      setSelectedObjectId(imageObj.id);
+      setStatusMessage(`Added ${asset.originalName ?? asset.id} to canvas`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not add image");
+    }
   };
 
   const onConvertToOutline = async () => {
@@ -155,9 +270,60 @@ export default function PlacementEditor({ designJobId, placement, onUpdated, onR
     }
 
     commitDoc({ ...doc, objects: [...doc.objects, json.data.derivedVectorObject as PlacementObject] });
-    setStatusMessage(["Outline generated", ...(json.data.warnings as string[])].join(" | "));
+    setStatusMessage(["Outline generated", ...((json.data?.warnings as string[] | undefined) ?? [])].join(" | "));
   };
 
+  const runPreflight = async () => {
+    setRunningPreflight(true);
+    setStatusMessage(null);
+    try {
+      const res = await fetch(`/api/design-jobs/${designJobId}/preflight`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error?.message || "Preflight failed");
+      setPreflight(json.data as PreflightResult);
+      setStatusMessage("Preflight completed.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Unknown preflight error");
+    } finally {
+      setRunningPreflight(false);
+    }
+  };
+
+  const exportJob = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/design-jobs/${designJobId}/export`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error?.message || "Export failed");
+      setExportPayload(json.data as ExportPayload);
+      setStatusMessage("Export package generated.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Unknown export error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportBatch = async () => {
+    setExporting(true);
+    try {
+      const jobIds = batchIds.split(",").map((entry) => entry.trim()).filter(Boolean);
+      const res = await fetch("/api/design-jobs/export-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ designJobIds: jobIds })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error?.message || "Batch export failed");
+      setStatusMessage(`Batch exported ${json.data.count} jobs.`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Unknown batch export error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
   const onRunPreflightClick = async () => {
     try {
       setPreflightSummary(await onRunPreflight());
@@ -198,7 +364,15 @@ export default function PlacementEditor({ designJobId, placement, onUpdated, onR
 
   return <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">{/* UI unchanged */}
       <h2 className="text-base font-semibold">Placement & Text Tools (mm)</h2>
+      <p className="min-h-5 text-xs text-slate-600" aria-live="polite">{autosave.statusMessage}</p>
       <p className="text-xs text-slate-600">Source of truth is the unwrapped 2D document.</p>
+      {autosave.hasRecoveredDraft ? (
+        <div className="flex flex-wrap items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <span>Recovered unsaved local edits.</span>
+          <button className="rounded border border-amber-400 px-2 py-1" onClick={autosave.useLocalDraft}>Use Local Draft</button>
+          <button className="rounded border border-amber-400 px-2 py-1" onClick={autosave.useServerVersion}>Use Server Version</button>
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         <button className="rounded border px-2 py-1 text-sm" onClick={() => addText("text_line")}>Add Text Line</button>
         <button className="rounded border px-2 py-1 text-sm" onClick={() => addText("text_block")}>Add Text Block</button>
@@ -212,7 +386,40 @@ export default function PlacementEditor({ designJobId, placement, onUpdated, onR
           const next = redoStack[0]; if (!next) return; setUndoStack((stack) => [...stack, doc]); setRedoStack((stack) => stack.slice(1)); setDoc(next);
         }}>Redo</button>
       </div>
+
+      <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
+        <h3 className="text-sm font-semibold">Artwork Assets</h3>
+        <label className="block text-sm">
+          <span>Upload Artwork</span>
+          <input type="file" accept=".svg,.png,.jpg,.jpeg,.webp" className="mt-1 block w-full text-xs" onChange={onUploadArtwork} />
+        </label>
+        <div className="max-h-44 space-y-2 overflow-auto">
+          {assets.map((asset) => (
+            <div key={asset.id} className="flex items-center justify-between gap-2 rounded border bg-white p-2 text-xs">
+              <div>
+                <p className="font-medium">{asset.originalName ?? asset.id}</p>
+                <p className="text-slate-600">{asset.widthPx ?? "?"}×{asset.heightPx ?? "?"} px</p>
+              </div>
+              <button className="rounded border px-2 py-1" onClick={() => onAddAssetToCanvas(asset)}>Add to Canvas</button>
+            </div>
+          ))}
+          {assets.length === 0 ? <p className="text-xs text-slate-600">No artwork uploaded for this job yet.</p> : null}
+        </div>
+      </section>
+
       <label className="block text-sm"><span>Selected Object</span><select value={selectedObjectId ?? ""} onChange={(event) => setSelectedObjectId(event.target.value || null)} className="w-full rounded border px-2 py-1"><option value="">None</option>{doc.objects.map((entry) => (<option key={entry.id} value={entry.id}>{entry.kind}:{entry.id.slice(0, 8)}</option>))}</select></label>
+
+      {isImageObject(selected) ? (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="text-sm">X (mm)<input type="number" step="0.01" value={selected.xMm} onChange={(e) => updateSelectedImage({ xMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Y (mm)<input type="number" step="0.01" value={selected.yMm} onChange={(e) => updateSelectedImage({ yMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Width (mm)<input type="number" min="0.01" step="0.01" value={selected.widthMm} onChange={(e) => updateSelectedImage({ widthMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Height (mm)<input type="number" min="0.01" step="0.01" value={selected.heightMm} onChange={(e) => updateSelectedImage({ heightMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Rotation (deg)<input type="number" step="0.01" value={selected.rotationDeg} onChange={(e) => updateSelectedImage({ rotationDeg: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Opacity<input type="number" min="0" max="1" step="0.01" value={selected.opacity} onChange={(e) => updateSelectedImage({ opacity: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-2 rounded border border-slate-200 p-3 text-sm sm:grid-cols-2">
         <label className="flex items-center gap-2"><input type="checkbox" checked={doc.wrap?.enabled ?? false} onChange={(e) => updateWrap((wrap) => ({ ...wrap, enabled: e.target.checked }))} /> Enable Cylindrical Wrap</label>
         <label>Diameter (mm)<input type="number" step="0.1" value={doc.wrap?.diameterMm ?? 87} onChange={(e) => updateWrap((wrap) => ({ ...wrap, diameterMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
@@ -232,6 +439,47 @@ export default function PlacementEditor({ designJobId, placement, onUpdated, onR
           <button onClick={onConvertToOutline} className="rounded bg-slate-900 px-3 py-2 text-sm text-white">Convert to Outline</button>
         </div> : null}
       {selectedWarnings.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-xs text-amber-700">{selectedWarnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : null}
+      <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-semibold">Export Pack</h3>
+          <span className={`rounded-full px-2 py-0.5 text-xs ${preflight?.status === "pass" ? "bg-emerald-100 text-emerald-700" : preflight?.status === "warn" ? "bg-amber-100 text-amber-700" : preflight?.status === "fail" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
+            {preflight?.status ?? "not-run"}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="rounded border px-2 py-1 text-xs" onClick={() => void runPreflight()} disabled={isRunningPreflight}>{isRunningPreflight ? "Running..." : "Run Preflight"}</button>
+          <button className="rounded bg-slate-900 px-2 py-1 text-xs text-white" onClick={() => void exportJob()} disabled={isExporting}>{isExporting ? "Exporting..." : "Export Job"}</button>
+        </div>
+        <label className="block text-xs">
+          Batch Job IDs (comma separated)
+          <input value={batchIds} onChange={(event) => setBatchIds(event.target.value)} placeholder="job_a,job_b" className="mt-1 w-full rounded border px-2 py-1" />
+        </label>
+        <button className="rounded border px-2 py-1 text-xs" onClick={() => void exportBatch()} disabled={isExporting}>Export Selected Jobs</button>
+        {(groupedIssues.error.length + groupedIssues.warning.length + groupedIssues.info.length) > 0 ? (
+          <div className="space-y-2 text-xs">
+            {["error", "warning", "info"].map((severity) => (
+              <div key={severity}>
+                <p className="font-medium uppercase">{severity}</p>
+                <ul className="list-disc pl-4">
+                  {groupedIssues[severity as keyof typeof groupedIssues].map((issue) => (
+                    <li key={`${issue.code}-${issue.objectId ?? issue.message}`}>{issue.message}{issue.objectId ? ` (${issue.objectId})` : ""}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {exportPayload ? (
+          <div className="space-y-2">
+            <label className="block text-xs">Manifest JSON<textarea readOnly value={JSON.stringify(exportPayload.manifest, null, 2)} className="mt-1 h-28 w-full rounded border px-2 py-1 font-mono" /></label>
+            <label className="block text-xs">SVG<textarea readOnly value={exportPayload.svg} className="mt-1 h-24 w-full rounded border px-2 py-1 font-mono" /></label>
+            <div className="flex gap-2">
+              <button className="rounded border px-2 py-1 text-xs" onClick={() => navigator.clipboard.writeText(JSON.stringify(exportPayload.manifest, null, 2))}>Copy Manifest</button>
+              <button className="rounded border px-2 py-1 text-xs" onClick={() => navigator.clipboard.writeText(exportPayload.svg)}>Copy SVG</button>
+            </div>
+          </div>
+        ) : null}
+      </section>
       {preflightSummary ? <div className="space-y-2 rounded border border-slate-200 p-3 text-sm">
         <h3 className="font-semibold">Preflight Summary</h3>
         {preflightSummary.errors.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-red-600">{preflightSummary.errors.map((error, index) => <li key={`${error.code}-${index}`}>{error.message}</li>)}</ul> : <p className="text-emerald-700">No errors.</p>}
@@ -243,6 +491,6 @@ export default function PlacementEditor({ designJobId, placement, onUpdated, onR
         </tbody></table>
       </div> : null}
       <pre className="max-h-72 overflow-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(doc ?? createDefaultPlacementDocument(), null, 2)}</pre>
-      <p className="text-xs text-slate-700">{isSaving ? "Saving..." : statusMessage}</p>
+      <p className="min-h-5 text-xs text-slate-700">{statusMessage}</p>
     </section>;
 }

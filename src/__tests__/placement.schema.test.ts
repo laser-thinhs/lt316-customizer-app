@@ -32,6 +32,6 @@ describe("placement schema v3", () => {
 
     expect(upgraded.version).toBe(3);
     expect(upgraded.canvas.widthMm).toBe(60);
-    expect(upgraded.objects[0]?.kind).toBe("image");
+    expect(upgraded.objects).toHaveLength(0);
   });
 });

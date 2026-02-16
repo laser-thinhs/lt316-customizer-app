@@ -1,5 +1,5 @@
 import { POST } from "@/app/api/design-jobs/route";
-import { PATCH } from "@/app/api/design-jobs/[id]/placement/route";
+import { PATCH } from "@/app/api/design-jobs/[id]/route";
 import { prisma } from "@/lib/prisma";
 
 jest.mock("@/lib/prisma", () => ({
@@ -71,29 +71,74 @@ describe("design-jobs routes", () => {
         machine: { strokeWidthWarningThresholdMm: 0.1 },
         objects: []
       },
+      updatedAt: "2025-01-01T10:00:00.000Z",
       productProfile: { id: "prod_1", name: "20oz Straight Tumbler", sku: "TMBLR-20OZ-STRAIGHT" },
       machineProfile: { id: "mach_1", name: "Fiber Galvo 300 Lens", lens: "300mm" },
       assets: []
     });
 
-    const req = new Request("http://localhost/api/design-jobs/job_123/placement", {
+    const req = new Request("http://localhost/api/design-jobs/job_123", {
       method: "PATCH",
       body: JSON.stringify({
         placementJson: {
-          widthMm: 65,
-          heightMm: 40,
-          offsetXMm: 2,
-          offsetYMm: -1,
-          rotationDeg: 5,
-          anchor: "center"
+          version: 2,
+          canvas: { widthMm: 65, heightMm: 40 },
+          machine: { strokeWidthWarningThresholdMm: 0.1 },
+          objects: []
         }
       })
     });
 
     const res = await PATCH(req, { params: Promise.resolve({ id: "job_123" }) });
     expect(res.status).toBe(200);
+    expect(prisma.designJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { placementJson: expect.any(Object) }
+      })
+    );
 
     const json = await res.json();
     expect(json.data.placementJson.version).toBe(3);
+  });
+
+  it("PATCH /api/design-jobs/:id returns 422 on strict payload validation errors", async () => {
+    const req = new Request("http://localhost/api/design-jobs/job_123", {
+      method: "PATCH",
+      body: JSON.stringify({
+        placementJson: {
+          version: 2,
+          canvas: { widthMm: 65, heightMm: 40 },
+          machine: { strokeWidthWarningThresholdMm: 0.1 },
+          objects: []
+        },
+        extraField: true
+      })
+    });
+
+    const res = await PATCH(req, { params: Promise.resolve({ id: "job_123" }) });
+    expect(res.status).toBe(422);
+
+    const json = await res.json();
+    expect(json.error.code).toBe("VALIDATION_ERROR");
+    expect(json.error.issues[0].code).toBe("unrecognized_keys");
+  });
+
+  it("PATCH /api/design-jobs/:id returns 404 for missing design job", async () => {
+    (prisma.designJob.findUnique as jest.Mock).mockResolvedValue(null);
+
+    const req = new Request("http://localhost/api/design-jobs/job_missing", {
+      method: "PATCH",
+      body: JSON.stringify({
+        placementJson: {
+          version: 2,
+          canvas: { widthMm: 50, heightMm: 50 },
+          machine: { strokeWidthWarningThresholdMm: 0.1 },
+          objects: []
+        }
+      })
+    });
+
+    const res = await PATCH(req, { params: Promise.resolve({ id: "job_missing" }) });
+    expect(res.status).toBe(404);
   });
 });

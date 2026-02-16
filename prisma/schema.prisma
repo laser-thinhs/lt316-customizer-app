@@ -33,6 +33,17 @@ enum BatchItemStatus {
   skipped
 }
 
+enum ExportArtifactKind {
+  manifest
+  svg
+}
+
+enum ExportPreflightStatus {
+  pass
+  warn
+  fail
+}
+
 model ProductProfile {
   id                     String   @id @default(cuid())
   name                   String
@@ -87,6 +98,7 @@ model DesignJob {
   template      Template?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
   batchRunItem  BatchRunItem?  @relation(fields: [batchRunItemId], references: [id], onDelete: SetNull)
   assets         Asset[]
+  exportArtifacts ExportArtifact[]
 
   @@index([productProfileId])
   @@index([machineProfileId])
@@ -98,7 +110,9 @@ model Asset {
   id          String    @id @default(cuid())
   designJobId String
   kind        AssetKind
+  originalName String?
   mimeType    String
+  byteSize    Int?
   filePath    String
   widthPx     Int?
   heightPx    Int?
@@ -189,6 +203,23 @@ model BatchRunItem {
 
   @@unique([batchRunId, rowIndex])
   @@index([batchRunId, status])
+}
+
+
+model ExportArtifact {
+  id             String               @id @default(cuid())
+  designJobId    String
+  kind           ExportArtifactKind
+  version        String
+  preflightStatus ExportPreflightStatus
+  payloadJson    Json?
+  textContent    String?
+  createdAt      DateTime             @default(now())
+
+  designJob      DesignJob            @relation(fields: [designJobId], references: [id], onDelete: Cascade)
+
+  @@index([designJobId, createdAt])
+  @@index([kind])
 }
 
 model AuditLog {
