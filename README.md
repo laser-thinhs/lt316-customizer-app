@@ -141,3 +141,35 @@ npm run test -- home-page.ui.test.tsx
 - Default storage root is `./storage` and can be changed with `STORAGE_ROOT`.
 - The app auto-creates storage directories when needed.
 - Local cleanup: deleting files from `./storage/design-jobs/*` removes local uploads only (database rows remain unless removed separately).
+
+## Switching tracer to remote microservice
+
+Tracer APIs now use a provider abstraction. The default mode is local and keeps using in-repo tracing-core behavior.
+
+### Environment flags
+
+- `TRACER_PROVIDER=local|remote` (default: `local`)
+- `TRACER_SERVICE_URL` (required when `TRACER_PROVIDER=remote`)
+- `TRACER_SERVICE_API_KEY` (optional; sent as `x-api-key`)
+- `TRACER_TIMEOUT_MS` (default: `15000`)
+
+### Behavior
+
+- `POST /api/tracer` always preserves the existing response shape and now also stores generated SVG output in app-managed tracer assets.
+- `POST /api/tracer/jobs` and `GET /api/tracer/jobs/:id` support queued/processing/done/failed flow.
+- In remote mode, the app forwards `x-request-id` and retries remote network calls once with a 15s timeout.
+- Job completion is idempotent: once `outputSvgAssetId` is set, repeated polling returns stored output instead of creating duplicates.
+
+### Optional compose profile
+
+Run app + db only (local tracer provider):
+
+```bash
+docker compose --profile app up --build
+```
+
+Run app + db + external tracer service profile:
+
+```bash
+TRACER_PROVIDER=remote docker compose --profile app --profile tracer-remote up --build
+```
