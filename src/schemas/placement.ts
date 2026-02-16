@@ -1,15 +1,18 @@
 import { z } from "zod";
 
+const finiteNumber = z.number().finite();
+const positiveFiniteNumber = finiteNumber.positive();
+
 const anchorSchema = z.enum(["center", "top-left", "top-right", "bottom-left", "bottom-right"]);
 
 const baseObjectSchema = z.object({
   id: z.string().min(1),
-  rotationDeg: z.number(),
+  rotationDeg: finiteNumber,
   anchor: anchorSchema,
-  offsetXMm: z.number(),
-  offsetYMm: z.number(),
-  boxWidthMm: z.number().positive(),
-  boxHeightMm: z.number().positive(),
+  offsetXMm: finiteNumber,
+  offsetYMm: finiteNumber,
+  boxWidthMm: positiveFiniteNumber,
+  boxHeightMm: positiveFiniteNumber,
   mirrorX: z.boolean().default(false),
   mirrorY: z.boolean().default(false),
   zIndex: z.number().int().default(0)
@@ -20,19 +23,19 @@ const typographicSchema = z.object({
   fontFamily: z.string().min(1),
   fontWeight: z.number().int().min(100).max(900),
   fontStyle: z.enum(["normal", "italic"]),
-  fontSizeMm: z.number().positive(),
-  lineHeight: z.number().positive().default(1.2),
-  letterSpacingMm: z.number(),
+  fontSizeMm: positiveFiniteNumber,
+  lineHeight: positiveFiniteNumber.default(1.2),
+  letterSpacingMm: finiteNumber,
   horizontalAlign: z.enum(["left", "center", "right"]),
   verticalAlign: z.enum(["top", "middle", "bottom"]),
   fillMode: z.enum(["fill", "stroke"]),
-  strokeWidthMm: z.number().nonnegative().default(0)
+  strokeWidthMm: finiteNumber.nonnegative().default(0)
 });
 
 export const textArcSchema = z.object({
-  radiusMm: z.number().positive(),
-  startAngleDeg: z.number(),
-  endAngleDeg: z.number(),
+  radiusMm: positiveFiniteNumber,
+  startAngleDeg: finiteNumber,
+  endAngleDeg: finiteNumber,
   direction: z.enum(["cw", "ccw"]),
   baselineMode: z.enum(["inside", "center", "outside"]),
   seamWrapMode: z.enum(["disallow", "split"]).default("disallow")
@@ -60,10 +63,28 @@ export const textObjectSchema = z.discriminatedUnion("kind", [
   textArcObjectSchema
 ]);
 
-export const imageObjectSchema = baseObjectSchema.extend({
+const imageObjectShape = {
+  id: z.string().min(1),
   kind: z.literal("image"),
-  src: z.string().min(1)
-});
+  type: z.literal("image").default("image"),
+  assetId: z.string().min(1),
+  xMm: finiteNumber,
+  yMm: finiteNumber,
+  widthMm: positiveFiniteNumber,
+  heightMm: positiveFiniteNumber,
+  rotationDeg: finiteNumber.default(0),
+  lockAspectRatio: z.boolean().default(true),
+  opacity: finiteNumber.min(0).max(1).default(1)
+} as const;
+
+export const imageObjectSchema = z.object(imageObjectShape);
+
+const legacyImageObjectSchema = baseObjectSchema
+  .extend({
+    kind: z.literal("image"),
+    src: z.string().min(1)
+  })
+  .passthrough();
 
 export const vectorObjectSchema = baseObjectSchema.extend({
   kind: z.literal("vector"),
@@ -73,7 +94,7 @@ export const vectorObjectSchema = baseObjectSchema.extend({
     .object({
       fontHash: z.string(),
       conversionTimestamp: z.string(),
-      toleranceMm: z.number().positive()
+      toleranceMm: positiveFiniteNumber
     })
     .optional()
 });
@@ -86,24 +107,50 @@ export const placementObjectSchema = z.union([
   textArcObjectSchema
 ]);
 
-export const placementDocumentSchema = z.object({
+const placementDocumentV2Schema = z.object({
   version: z.literal(2),
   canvas: z.object({
-    widthMm: z.number().positive(),
-    heightMm: z.number().positive()
+    widthMm: positiveFiniteNumber,
+    heightMm: positiveFiniteNumber
   }),
   machine: z.object({
-    strokeWidthWarningThresholdMm: z.number().positive().default(0.1)
+    strokeWidthWarningThresholdMm: positiveFiniteNumber.default(0.1)
   }),
-  objects: z.array(placementObjectSchema)
+  objects: z.array(
+    z.union([legacyImageObjectSchema, imageObjectSchema, vectorObjectSchema, textLineObjectSchema, textBlockObjectSchema, textArcObjectSchema])
+  )
 });
 
+export const placementDocumentSchema = placementDocumentV2Schema.transform((doc) => ({
+  ...doc,
+  objects: doc.objects.map((entry) => {
+    if (entry.kind !== "image") return entry;
+    const migrated = imageObjectSchema.safeParse(entry);
+    if (migrated.success) return migrated.data;
+
+    const legacy = legacyImageObjectSchema.parse(entry);
+    return imageObjectSchema.parse({
+      id: legacy.id,
+      kind: "image",
+      type: "image",
+      assetId: legacy.src,
+      xMm: legacy.offsetXMm,
+      yMm: legacy.offsetYMm,
+      widthMm: legacy.boxWidthMm,
+      heightMm: legacy.boxHeightMm,
+      rotationDeg: legacy.rotationDeg,
+      lockAspectRatio: true,
+      opacity: 1
+    });
+  })
+}));
+
 const legacyPlacementSchema = z.object({
-  widthMm: z.number().positive(),
-  heightMm: z.number().positive(),
-  offsetXMm: z.number(),
-  offsetYMm: z.number(),
-  rotationDeg: z.number(),
+  widthMm: positiveFiniteNumber,
+  heightMm: positiveFiniteNumber,
+  offsetXMm: finiteNumber,
+  offsetYMm: finiteNumber,
+  rotationDeg: finiteNumber,
   anchor: anchorSchema
 });
 
@@ -114,6 +161,7 @@ export type PlacementObject = z.infer<typeof placementObjectSchema>;
 export type TextObject = z.infer<typeof textObjectSchema>;
 export type TextArc = z.infer<typeof textArcSchema>;
 export type PlacementInput = z.infer<typeof placementSchema>;
+export type ImagePlacementObject = z.infer<typeof imageObjectSchema>;
 
 export function createDefaultPlacementDocument(): PlacementDocument {
   return {
@@ -136,21 +184,6 @@ export function upgradePlacementToV2(input: PlacementInput): PlacementDocument {
       heightMm: legacy.heightMm
     },
     machine: { strokeWidthWarningThresholdMm: 0.1 },
-    objects: [
-      {
-        id: "legacy-image-slot",
-        kind: "image",
-        src: "/stub/uploads/not-implemented.svg",
-        boxWidthMm: legacy.widthMm,
-        boxHeightMm: legacy.heightMm,
-        offsetXMm: legacy.offsetXMm,
-        offsetYMm: legacy.offsetYMm,
-        rotationDeg: legacy.rotationDeg,
-        anchor: legacy.anchor,
-        mirrorX: false,
-        mirrorY: false,
-        zIndex: 0
-      }
-    ]
+    objects: []
   };
 }

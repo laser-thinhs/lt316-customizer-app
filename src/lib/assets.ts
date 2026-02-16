@@ -3,32 +3,43 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { AppError } from "@/lib/errors";
 
-export const ASSET_ROOT = path.join(process.cwd(), "storage", "assets");
-
 const ALLOWED_EXTENSIONS = new Set([".svg", ".png", ".jpg", ".jpeg", ".webp"]);
 const ALLOWED_MIME = new Set(["image/svg+xml", "image/png", "image/jpeg", "image/webp"]);
 
 export type UploadMime = "image/svg+xml" | "image/png" | "image/jpeg" | "image/webp";
 
+type ImageDimensions = {
+  widthPx: number;
+  heightPx: number;
+};
+
+export function storageRoot() {
+  return path.resolve(process.cwd(), process.env.STORAGE_ROOT ?? "./storage");
+}
+
 export function maxAssetSizeBytes() {
-  const raw = process.env.ASSET_UPLOAD_MAX_BYTES;
-  const parsed = raw ? Number(raw) : 10 * 1024 * 1024;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10 * 1024 * 1024;
+  return 15 * 1024 * 1024;
 }
 
 export function sanitizeFilename(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
+  const cleaned = value.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const compacted = cleaned.replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+  return compacted.slice(0, 120) || "upload";
 }
 
 export function assertSupportedUpload(fileName: string, mimeType: string) {
   const ext = path.extname(fileName).toLowerCase();
   if (!ALLOWED_EXTENSIONS.has(ext) || !ALLOWED_MIME.has(mimeType)) {
-    throw new AppError("Unsupported file type", 400, "UNSUPPORTED_FILE_TYPE");
+    throw new AppError(
+      "Unsupported file type. Allowed: png, jpg, jpeg, svg, webp.",
+      400,
+      "UNSUPPORTED_FILE_TYPE"
+    );
   }
 }
 
 export function assertNoExecutableContent(buffer: Buffer) {
-  const header = buffer.subarray(0, 8).toString("utf8").toLowerCase();
+  const header = buffer.subarray(0, 256).toString("utf8").toLowerCase();
   if (header.startsWith("#!") || header.includes("<script")) {
     throw new AppError("Executable content is not allowed", 400, "UNSAFE_CONTENT");
   }
@@ -44,14 +55,97 @@ export function detectMime(buffer: Buffer, ext: string): UploadMime | null {
   return null;
 }
 
-export async function ensureAssetDir(assetId: string) {
-  const dir = path.join(ASSET_ROOT, assetId);
+export function createAssetId() {
+  return randomUUID();
+}
+
+export async function ensureDesignJobAssetDir(designJobId: string) {
+  const dir = path.join(storageRoot(), "design-jobs", designJobId);
   await fs.mkdir(dir, { recursive: true });
   return dir;
 }
 
-export function createAssetId() {
-  return randomUUID();
+export function buildStoredAssetFilename(assetId: string, originalName: string) {
+  return `${assetId}-${sanitizeFilename(originalName)}`;
+}
+
+export function asAssetPublicUrl(assetId: string) {
+  return `/api/assets/${assetId}`;
+}
+
+export function extractImageDimensions(buffer: Buffer, mimeType: UploadMime): ImageDimensions | null {
+  if (mimeType === "image/png") {
+    if (buffer.length < 24) return null;
+    return { widthPx: buffer.readUInt32BE(16), heightPx: buffer.readUInt32BE(20) };
+  }
+
+  if (mimeType === "image/jpeg") {
+    let offset = 2;
+    while (offset < buffer.length - 9) {
+      if (buffer[offset] !== 0xff) {
+        offset += 1;
+        continue;
+      }
+      const marker = buffer[offset + 1];
+      const length = buffer.readUInt16BE(offset + 2);
+      const isSofMarker =
+        marker >= 0xc0 &&
+        marker <= 0xcf &&
+        marker !== 0xc4 &&
+        marker !== 0xc8 &&
+        marker !== 0xcc;
+      if (isSofMarker) {
+        return {
+          heightPx: buffer.readUInt16BE(offset + 5),
+          widthPx: buffer.readUInt16BE(offset + 7)
+        };
+      }
+      offset += 2 + length;
+    }
+    return null;
+  }
+
+  if (mimeType === "image/webp") {
+    if (buffer.length < 30) return null;
+    const format = buffer.toString("ascii", 12, 16);
+    if (format === "VP8X") {
+      return {
+        widthPx: 1 + buffer.readUIntLE(24, 3),
+        heightPx: 1 + buffer.readUIntLE(27, 3)
+      };
+    }
+
+    if (format === "VP8 ") {
+      return {
+        widthPx: buffer.readUInt16LE(26) & 0x3fff,
+        heightPx: buffer.readUInt16LE(28) & 0x3fff
+      };
+    }
+
+    if (format === "VP8L") {
+      const bits = buffer.readUInt32LE(21);
+      return {
+        widthPx: (bits & 0x3fff) + 1,
+        heightPx: ((bits >> 14) & 0x3fff) + 1
+      };
+    }
+  }
+
+  if (mimeType === "image/svg+xml") {
+    const source = buffer.toString("utf8", 0, Math.min(buffer.length, 8_000));
+    const widthMatch = source.match(/\bwidth\s*=\s*"([0-9.]+)(px)?"/i);
+    const heightMatch = source.match(/\bheight\s*=\s*"([0-9.]+)(px)?"/i);
+    if (widthMatch && heightMatch) {
+      return { widthPx: Number(widthMatch[1]), heightPx: Number(heightMatch[1]) };
+    }
+
+    const viewBoxMatch = source.match(/\bviewBox\s*=\s*"[\d.\-]+\s+[\d.\-]+\s+([\d.]+)\s+([\d.]+)"/i);
+    if (viewBoxMatch) {
+      return { widthPx: Number(viewBoxMatch[1]), heightPx: Number(viewBoxMatch[2]) };
+    }
+  }
+
+  return null;
 }
 
 export function normalizeSvg(source: string): string {
