@@ -11,7 +11,7 @@ export const createDesignJobSchema = z.object({
 
 export const updatePlacementSchema = z.object({
   placementJson: placementSchema
-});
+}).strict();
 
 export type CreateDesignJobInput = z.infer<typeof createDesignJobSchema>;
 export type UpdatePlacementInput = z.infer<typeof updatePlacementSchema>;
