@@ -1,11 +1,16 @@
 import { POST as PreflightPost } from "@/app/api/design-jobs/[id]/preflight/route";
 import { POST as ExportSvgPost } from "@/app/api/design-jobs/[id]/export/svg/route";
 import { prisma } from "@/lib/prisma";
+import { getDesignJobById } from "@/services/design-job.service";
 
 jest.mock("@/lib/prisma", () => ({
   prisma: {
     designJob: { findUnique: jest.fn() }
   }
+}));
+
+jest.mock("@/services/design-job.service", () => ({
+  getDesignJobById: jest.fn()
 }));
 
 const baseJob = {
@@ -59,8 +64,8 @@ describe("design job preflight/export routes", () => {
 
     expect(response.status).toBe(200);
     const json = await response.json();
-    expect(typeof json.data.ok).toBe("boolean");
-    expect(json.data.metrics.wrapWidthMm).toBeDefined();
+    expect(typeof json.data.status).toBe("string");
+    expect(Array.isArray(json.data.issues)).toBe(true);
   });
 
   it("POST /preflight returns 404 for invalid job id", async () => {
@@ -74,7 +79,7 @@ describe("design job preflight/export routes", () => {
   });
 
   it("POST /export/svg returns svg with mm dimensions", async () => {
-    (prisma.designJob.findUnique as jest.Mock).mockResolvedValue(baseJob);
+    (getDesignJobById as jest.Mock).mockResolvedValue(baseJob);
 
     const response = await ExportSvgPost(new Request("http://localhost/api/design-jobs/job_1/export/svg?guides=1", { method: "POST" }), {
       params: Promise.resolve({ id: "job_1" })
