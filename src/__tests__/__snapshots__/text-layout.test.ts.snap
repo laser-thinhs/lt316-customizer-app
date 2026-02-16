@@ -1,0 +1,17 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`text layout snapshot text transforms 1`] = `
+{
+  "bounds": {
+    "heightMm": 19.79898987322333,
+    "widthMm": 19.79898987322333,
+    "xMm": 55,
+    "yMm": -1,
+  },
+  "measured": {
+    "content": "SNAP",
+    "heightMm": 4,
+    "widthMm": 10.52,
+  },
+}
+`;

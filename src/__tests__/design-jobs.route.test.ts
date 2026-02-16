@@ -31,7 +31,7 @@ describe("design-jobs routes", () => {
       status: "draft",
       createdAt: new Date().toISOString(),
       placementJson: {
-        version: 2,
+        version: 3,
         canvas: { widthMm: 50, heightMm: 50 },
         machine: { strokeWidthWarningThresholdMm: 0.1 },
         objects: []
@@ -46,7 +46,7 @@ describe("design-jobs routes", () => {
         productProfileId: "prod_1",
         machineProfileId: "mach_1",
         placementJson: {
-          version: 2,
+          version: 3,
           canvas: { widthMm: 50, heightMm: 50 },
           machine: { strokeWidthWarningThresholdMm: 0.1 },
           objects: []
@@ -61,12 +61,12 @@ describe("design-jobs routes", () => {
     expect(json.data.id).toBe("job_123");
   });
 
-  it("PATCH /api/design-jobs/:id/placement upgrades legacy payload to v2", async () => {
+  it("PATCH /api/design-jobs/:id/placement upgrades legacy payload to v3", async () => {
     (prisma.designJob.findUnique as jest.Mock).mockResolvedValue({ id: "job_123" });
     (prisma.designJob.update as jest.Mock).mockResolvedValue({
       id: "job_123",
       placementJson: {
-        version: 2,
+        version: 3,
         canvas: { widthMm: 65, heightMm: 40 },
         machine: { strokeWidthWarningThresholdMm: 0.1 },
         objects: []
@@ -94,6 +94,6 @@ describe("design-jobs routes", () => {
     expect(res.status).toBe(200);
 
     const json = await res.json();
-    expect(json.data.placementJson.version).toBe(2);
+    expect(json.data.placementJson.version).toBe(3);
   });
 });

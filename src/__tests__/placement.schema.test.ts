@@ -1,53 +1,27 @@
-import { placementDocumentSchema, upgradePlacementToV2 } from "@/schemas/placement";
+import { placementDocumentSchema, upgradePlacementToV3 } from "@/schemas/placement";
 
-describe("placement schema v2", () => {
-  it("accepts valid v2 placement with text arc", () => {
+describe("placement schema v3", () => {
+  it("accepts valid v2/v3 placement with wrap", () => {
     const result = placementDocumentSchema.safeParse({
-      version: 2,
+      version: 3,
       canvas: { widthMm: 60, heightMm: 40 },
       machine: { strokeWidthWarningThresholdMm: 0.12 },
-      objects: [
-        {
-          id: "text_1",
-          kind: "text_arc",
-          content: "HELLO",
-          fontFamily: "Inter",
-          fontWeight: 700,
-          fontStyle: "normal",
-          fontSizeMm: 4,
-          lineHeight: 1.2,
-          letterSpacingMm: 0.2,
-          horizontalAlign: "center",
-          verticalAlign: "middle",
-          rotationDeg: 0,
-          anchor: "center",
-          offsetXMm: 5,
-          offsetYMm: 4,
-          boxWidthMm: 20,
-          boxHeightMm: 8,
-          fillMode: "fill",
-          strokeWidthMm: 0,
-          mirrorX: false,
-          mirrorY: false,
-          zIndex: 1,
-          allCaps: true,
-          arc: {
-            radiusMm: 20,
-            startAngleDeg: -60,
-            endAngleDeg: 60,
-            direction: "cw",
-            baselineMode: "center",
-            seamWrapMode: "disallow"
-          }
-        }
-      ]
+      wrap: {
+        enabled: true,
+        diameterMm: 87,
+        wrapWidthMm: 273.319,
+        seamXmm: 0,
+        seamSafeMarginMm: 3,
+        microOverlapMm: 0.9
+      },
+      objects: []
     });
 
     expect(result.success).toBe(true);
   });
 
-  it("upgrades legacy placement payload to v2", () => {
-    const upgraded = upgradePlacementToV2({
+  it("upgrades legacy placement payload to v3", () => {
+    const upgraded = upgradePlacementToV3({
       widthMm: 60,
       heightMm: 40,
       offsetXMm: 2,
@@ -56,7 +30,7 @@ describe("placement schema v2", () => {
       anchor: "center"
     });
 
-    expect(upgraded.version).toBe(2);
+    expect(upgraded.version).toBe(3);
     expect(upgraded.canvas.widthMm).toBe(60);
     expect(upgraded.objects[0]?.kind).toBe("image");
   });
