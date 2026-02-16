@@ -110,7 +110,9 @@ model Asset {
   id          String    @id @default(cuid())
   designJobId String
   kind        AssetKind
+  originalName String?
   mimeType    String
+  byteSize    Int?
   filePath    String
   widthPx     Int?
   heightPx    Int?

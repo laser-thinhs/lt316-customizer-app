@@ -130,3 +130,14 @@ npm run test -- home-page.ui.test.tsx
 ## Notes
 - `placementJson` is validated via Zod and intentionally stored in millimeters only.
 - File uploads are intentionally stubbed for Layer 1 and still not connected to cloud storage.
+
+
+## Artwork uploads (Layer 2.4)
+
+- Upload endpoint: `POST /api/assets` (`multipart/form-data`) with `designJobId` and `file`.
+- Supported file types: `png`, `jpg`, `jpeg`, `svg`, `webp` up to **15 MB**.
+- Files are stored locally under:
+  - `${STORAGE_ROOT}/design-jobs/{designJobId}/{assetId}-{sanitizedOriginalName}`
+- Default storage root is `./storage` and can be changed with `STORAGE_ROOT`.
+- The app auto-creates storage directories when needed.
+- Local cleanup: deleting files from `./storage/design-jobs/*` removes local uploads only (database rows remain unless removed separately).
