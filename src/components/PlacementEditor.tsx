@@ -101,7 +101,6 @@ function createTextObject(kind: TextObject["kind"]): TextObject {
 
 const roundToHundredth = (value: number) => Math.round(value * 100) / 100;
 
-export default function PlacementEditor({ designJobId, placement, onUpdated }: Props) {
 export default function PlacementEditor({ designJobId, placement, onUpdated, onRunPreflight, onExportSvg }: Props) {
   const [doc, setDoc] = useState<PlacementDocument>(placementDocumentSchema.parse(placement));
   const [assets, setAssets] = useState<ApiAsset[]>([]);
@@ -323,7 +322,6 @@ export default function PlacementEditor({ designJobId, placement, onUpdated, onR
     }
   };
 
-  return <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
   const onRunPreflightClick = async () => {
     try {
       setPreflightSummary(await onRunPreflight());

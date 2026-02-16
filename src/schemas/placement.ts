@@ -108,8 +108,6 @@ export const placementObjectSchema = z.union([
   textArcObjectSchema
 ]);
 
-const placementDocumentV2Schema = z.object({
-  version: z.literal(2),
 export const wrapSchema = z.object({
   enabled: z.boolean().default(false),
   diameterMm: z.number().positive(),
@@ -129,33 +127,7 @@ const placementDocumentBaseSchema = z.object({
   }),
   objects: z.array(
     z.union([legacyImageObjectSchema, imageObjectSchema, vectorObjectSchema, textLineObjectSchema, textBlockObjectSchema, textArcObjectSchema])
-  )
-});
-
-export const placementDocumentSchema = placementDocumentV2Schema.transform((doc) => ({
-  ...doc,
-  objects: doc.objects.map((entry) => {
-    if (entry.kind !== "image") return entry;
-    const migrated = imageObjectSchema.safeParse(entry);
-    if (migrated.success) return migrated.data;
-
-    const legacy = legacyImageObjectSchema.parse(entry);
-    return imageObjectSchema.parse({
-      id: legacy.id,
-      kind: "image",
-      type: "image",
-      assetId: legacy.src,
-      xMm: legacy.offsetXMm,
-      yMm: legacy.offsetYMm,
-      widthMm: legacy.boxWidthMm,
-      heightMm: legacy.boxHeightMm,
-      rotationDeg: legacy.rotationDeg,
-      lockAspectRatio: true,
-      opacity: 1
-    });
-  })
-}));
-  objects: z.array(placementObjectSchema),
+  ),
   wrap: wrapSchema.optional()
 });
 
@@ -229,7 +201,6 @@ export function upgradePlacementToV3(input: PlacementInput): PlacementDocument {
       heightMm: legacy.heightMm
     },
     machine: { strokeWidthWarningThresholdMm: 0.1 },
-    objects: []
     objects: [
       {
         id: "legacy-image-slot",
