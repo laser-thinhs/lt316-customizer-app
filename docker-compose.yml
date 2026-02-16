@@ -12,5 +12,26 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
 
+  app:
+    profiles: ["app"]
+    build: .
+    environment:
+      DATABASE_URL: postgresql://app:app@db:5432/customizer?schema=public
+      TRACER_PROVIDER: ${TRACER_PROVIDER:-local}
+      TRACER_SERVICE_URL: ${TRACER_SERVICE_URL:-http://tracer-service:4010}
+      TRACER_SERVICE_API_KEY: ${TRACER_SERVICE_API_KEY:-}
+    depends_on:
+      - db
+    ports:
+      - '3000:3000'
+
+  tracer-service:
+    profiles: ["tracer-remote"]
+    image: ghcr.io/example/tracer-service:latest
+    environment:
+      PORT: 4010
+    ports:
+      - '4010:4010'
+
 volumes:
   pg_data:
