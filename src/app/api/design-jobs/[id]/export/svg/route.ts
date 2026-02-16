@@ -7,11 +7,43 @@ type Params = { params: Promise<{ id: string }> };
 
 type Bounds = { minX: number; maxX: number };
 
-function objectBounds(object: PlacementObject): Bounds {
-  const x = object.offsetXMm;
-  const width = object.boxWidthMm;
+type SharedPlacement = {
+  xMm: number;
+  yMm: number;
+  widthMm: number;
+  heightMm: number;
+  rotationDeg: number;
+  anchor: "center" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+};
 
-  switch (object.anchor) {
+function getPlacement(object: PlacementObject): SharedPlacement {
+  if (object.kind === "image") {
+    return {
+      xMm: object.xMm,
+      yMm: object.yMm,
+      widthMm: object.widthMm,
+      heightMm: object.heightMm,
+      rotationDeg: object.rotationDeg,
+      anchor: "top-left"
+    };
+  }
+
+  return {
+    xMm: object.offsetXMm,
+    yMm: object.offsetYMm,
+    widthMm: object.boxWidthMm,
+    heightMm: object.boxHeightMm,
+    rotationDeg: object.rotationDeg,
+    anchor: object.anchor
+  };
+}
+
+function objectBounds(object: PlacementObject): Bounds {
+  const placement = getPlacement(object);
+  const x = placement.xMm;
+  const width = placement.widthMm;
+
+  switch (placement.anchor) {
     case "center":
       return { minX: x - width / 2, maxX: x + width / 2 };
     case "top-left":
@@ -20,6 +52,8 @@ function objectBounds(object: PlacementObject): Bounds {
     case "top-right":
     case "bottom-right":
       return { minX: x - width, maxX: x };
+    default:
+      return { minX: x, maxX: x + width };
   }
 }
 
@@ -33,15 +67,16 @@ function escapeXml(value: string): string {
 }
 
 function objectToSvg(object: PlacementObject, translateX = 0): string {
-  const commonTransform = `translate(${object.offsetXMm + translateX} ${object.offsetYMm}) rotate(${object.rotationDeg})`;
+  const placement = getPlacement(object);
+  const commonTransform = `translate(${placement.xMm + translateX} ${placement.yMm}) rotate(${placement.rotationDeg})`;
 
   if (object.kind === "vector") {
-    return `<path id="${escapeXml(object.id)}" d="${escapeXml(object.pathData)}" transform="${commonTransform}" fill="none" stroke="black" stroke-width="${Math.max(object.strokeWidthMm ?? 0.1, 0.1)}" />`;
+    return `<path id="${escapeXml(object.id)}" d="${escapeXml(object.pathData)}" transform="${commonTransform}" fill="none" stroke="black" stroke-width="0.1" />`;
   }
 
   if (object.kind === "image") {
     const { minX } = objectBounds(object);
-    return `<rect id="${escapeXml(object.id)}" x="${minX + translateX}" y="${object.offsetYMm}" width="${object.boxWidthMm}" height="${object.boxHeightMm}" fill="none" stroke="black" stroke-width="0.1" />`;
+    return `<rect id="${escapeXml(object.id)}" x="${minX + translateX}" y="${placement.yMm}" width="${placement.widthMm}" height="${placement.heightMm}" fill="none" stroke="black" stroke-width="0.1" />`;
   }
 
   const textAnchor = object.horizontalAlign === "center" ? "middle" : object.horizontalAlign === "right" ? "end" : "start";
@@ -57,11 +92,13 @@ export async function POST(request: Request, { params }: Params) {
     const { id } = await params;
     const job = await getDesignJobById(id);
     const includeGuides = new URL(request.url).searchParams.get("guides") === "1";
-    const sortedObjects = [...job.placementJson.objects].sort((a, b) =>
-      a.zIndex === b.zIndex ? a.id.localeCompare(b.id) : a.zIndex - b.zIndex
-    );
+    const sortedObjects = [...job.placementJson.objects].sort((a, b) => {
+      const aZ = "zIndex" in a ? a.zIndex : 0;
+      const bZ = "zIndex" in b ? b.zIndex : 0;
+      return aZ === bZ ? a.id.localeCompare(b.id) : aZ - bZ;
+    });
 
-    const wrap = job.placementJson.wrap;
+    const wrap = (job.placementJson as { wrap?: { enabled?: boolean; wrapWidthMm?: number; seamXmm: number; microOverlapMm?: number } }).wrap;
     const wrapEnabled = Boolean(wrap?.enabled);
     const wrapWidth = wrap?.wrapWidthMm ?? job.placementJson.canvas.widthMm;
     const overlap = wrap?.microOverlapMm ?? 0;
@@ -83,9 +120,10 @@ export async function POST(request: Request, { params }: Params) {
 
     const guides: string[] = [];
     if (includeGuides && wrapEnabled && wrap) {
+      const guideWrapWidth = wrap.wrapWidthMm ?? job.placementJson.canvas.widthMm;
       guides.push(
         `<line x1="${wrap.seamXmm}" y1="0" x2="${wrap.seamXmm}" y2="${job.placementJson.canvas.heightMm}" stroke="#ef4444" stroke-width="0.1" />`,
-        `<line x1="${wrap.seamXmm + wrap.wrapWidthMm}" y1="0" x2="${wrap.seamXmm + wrap.wrapWidthMm}" y2="${job.placementJson.canvas.heightMm}" stroke="#ef4444" stroke-width="0.1" />`
+        `<line x1="${wrap.seamXmm + guideWrapWidth}" y1="0" x2="${wrap.seamXmm + guideWrapWidth}" y2="${job.placementJson.canvas.heightMm}" stroke="#ef4444" stroke-width="0.1" />`
       );
     }
 
