@@ -9,7 +9,7 @@ import {
   buildStoredAssetFilename,
   createAssetId,
   detectMime,
-  ensureDesignJobAssetDir,
+  ensureAssetStorageDir,
   extractImageDimensions,
   maxAssetSizeBytes
 } from "@/lib/assets";
@@ -86,7 +86,7 @@ export async function createAssetFromUpload(input: { designJobId: string; file: 
   }
 
   const assetId = createAssetId();
-  const dir = await ensureDesignJobAssetDir(designJobId);
+  const dir = await ensureAssetStorageDir(designJobId, assetId);
   const fileName = buildStoredAssetFilename(assetId, file.name);
   const filePath = path.join(dir, fileName);
 

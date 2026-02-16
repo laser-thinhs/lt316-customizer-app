@@ -65,6 +65,12 @@ export async function ensureDesignJobAssetDir(designJobId: string) {
   return dir;
 }
 
+export async function ensureAssetStorageDir(designJobId: string, assetId: string) {
+  const dir = path.join(storageRoot(), "design-jobs", designJobId, assetId);
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
 export function buildStoredAssetFilename(assetId: string, originalName: string) {
   return `${assetId}-${sanitizeFilename(originalName)}`;
 }
