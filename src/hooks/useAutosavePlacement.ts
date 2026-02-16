@@ -36,19 +36,6 @@ export function useAutosavePlacement({
   const isSavingRef = useRef(false);
   const queuedSaveRef = useRef(false);
   const retryDelayRef = useRef(1000);
-  const latestDesignJobIdRef = useRef(designJobId);
-
-  useEffect(() => {
-    latestDesignJobIdRef.current = designJobId;
-
-    if (retryTimerRef.current) {
-      clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
-    }
-
-    queuedSaveRef.current = false;
-    retryDelayRef.current = 1000;
-  }, [designJobId]);
 
   useEffect(() => {
     currentPlacementRef.current = placement;
@@ -77,11 +64,6 @@ export function useAutosavePlacement({
   }, []);
 
   const performSave = useCallback(async () => {
-    const jobIdAtSaveStart = designJobId;
-    if (latestDesignJobIdRef.current !== jobIdAtSaveStart) {
-      return;
-    }
-
     if (isSavingRef.current) {
       queuedSaveRef.current = true;
       return;
@@ -110,23 +92,13 @@ export function useAutosavePlacement({
       }
     } catch {
       setStatus("error");
-      const retryJobId = jobIdAtSaveStart;
       retryTimerRef.current = setTimeout(() => {
         retryTimerRef.current = null;
-        if (latestDesignJobIdRef.current !== retryJobId) {
-          return;
-        }
-
         void performSave();
       }, retryDelayRef.current);
       retryDelayRef.current = Math.min(10000, retryDelayRef.current * 2);
     } finally {
       isSavingRef.current = false;
-      if (latestDesignJobIdRef.current !== jobIdAtSaveStart) {
-        queuedSaveRef.current = false;
-        return;
-      }
-
       if (queuedSaveRef.current) {
         queuedSaveRef.current = false;
         void performSave();

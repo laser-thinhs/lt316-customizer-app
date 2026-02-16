@@ -30,3 +30,8 @@ Thumbs.db
 
 src/__tests__/__snapshots__/
 storage/
+
+node_modules/
+.next/
+storage/
+

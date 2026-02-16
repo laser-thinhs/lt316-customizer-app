@@ -125,55 +125,6 @@ describe("useAutosavePlacement", () => {
     expect(savePlacementMock).toHaveBeenCalledTimes(2);
   });
 
-
-  it("cancels pending retries when the design job changes", async () => {
-    savePlacementMock.mockRejectedValueOnce(new Error("fail once"));
-
-    const root = createRoot(document.createElement("div"));
-    let api: { setPlacement: (placement: PlacementDocument) => void } | null = null;
-
-    await act(async () => {
-      root.render(<Harness designJobId="job_a" initialPlacement={buildPlacement(50)} onReady={(instance) => { api = instance; }} />);
-    });
-
-    await act(async () => {
-      api?.setPlacement(buildPlacement(70));
-    });
-
-    await act(async () => {
-      jest.advanceTimersByTime(1200);
-      await Promise.resolve();
-    });
-
-    expect(savePlacementMock).toHaveBeenCalledTimes(1);
-    expect(savePlacementMock).toHaveBeenNthCalledWith(1, "job_a", expect.objectContaining({ canvas: { widthMm: 70, heightMm: 50 } }));
-
-    savePlacementMock.mockResolvedValue({ placementJson: buildPlacement(90), updatedAt: new Date().toISOString() });
-
-    await act(async () => {
-      root.render(<Harness designJobId="job_b" initialPlacement={buildPlacement(50)} onReady={(instance) => { api = instance; }} />);
-    });
-
-    await act(async () => {
-      api?.setPlacement(buildPlacement(90));
-    });
-
-    await act(async () => {
-      jest.advanceTimersByTime(1000);
-      await Promise.resolve();
-    });
-
-    expect(savePlacementMock).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      jest.advanceTimersByTime(200);
-      await Promise.resolve();
-    });
-
-    expect(savePlacementMock).toHaveBeenCalledTimes(2);
-    expect(savePlacementMock).toHaveBeenNthCalledWith(2, "job_b", expect.objectContaining({ canvas: { widthMm: 90, heightMm: 50 } }));
-  });
-
   it("supports local draft recovery decision flow", async () => {
     writePlacementDraft("job_3", buildPlacement(75));
 

@@ -42,15 +42,7 @@ describe("stable placement comparison", () => {
       ],
       machine: { strokeWidthWarningThresholdMm: 0.1 },
       canvas: { heightMm: 50, widthMm: 50 },
-      version: 3 as const,
-      wrap: {
-        enabled: false,
-        diameterMm: 87,
-        wrapWidthMm: 273.318560862312,
-        seamXmm: 0,
-        seamSafeMarginMm: 3,
-        microOverlapMm: 0.9
-      }
+      version: 2 as const
     };
 
     expect(arePlacementsEqual(left, right)).toBe(true);

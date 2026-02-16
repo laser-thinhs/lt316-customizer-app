@@ -7,7 +7,6 @@ import PlacementEditor from "@/components/PlacementEditor";
 import { useUIStore } from "@/store/ui.store";
 import {
   designJobResponseSchema,
-  preflightResponseSchema,
   ProductProfile,
   productProfilesResponseSchema,
   type DesignJob
@@ -113,36 +112,6 @@ export default function HomePage() {
     }
   };
 
-  const runPreflight = async () => {
-    if (!job) return null;
-    const res = await fetch(`/api/design-jobs/${job.id}/preflight`, { method: "POST" });
-    const json: unknown = await res.json();
-    if (!res.ok) {
-      throw new Error((json as { error?: { message?: string } })?.error?.message || "Preflight failed");
-    }
-
-    const parsed = preflightResponseSchema.safeParse(json);
-    if (!parsed.success) throw new Error("Unexpected preflight payload returned from API.");
-    return parsed.data.data;
-  };
-
-  const exportSvg = async () => {
-    if (!job) return;
-    const res = await fetch(`/api/design-jobs/${job.id}/export/svg?guides=1`, { method: "POST" });
-    if (!res.ok) {
-      const json: unknown = await res.json();
-      throw new Error((json as { error?: { message?: string } })?.error?.message || "SVG export failed");
-    }
-
-    const svg = await res.blob();
-    const url = URL.createObjectURL(svg);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `job-${job.id}.svg`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <main className="mx-auto w-full max-w-xl px-4 py-6 sm:py-10">
       <div className="space-y-6">
@@ -184,8 +153,6 @@ export default function HomePage() {
             <PlacementEditor
               designJobId={job.id}
               placement={job.placementJson}
-              onRunPreflight={runPreflight}
-              onExportSvg={exportSvg}
               onUpdated={(placementJson) => setJob((prev) => (prev ? { ...prev, placementJson } : prev))}
             />
           </>

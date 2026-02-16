@@ -4,14 +4,11 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ImagePlacementObject,
   PlacementDocument,
-  PlacementWrap,
   PlacementObject,
   TextObject,
   createDefaultPlacementDocument,
   placementDocumentSchema
 } from "@/schemas/placement";
-import { diameterToWrapWidthMm } from "@/lib/domain/cylinder";
-import { PreflightResponse } from "@/schemas/api";
 import { clampTextPlacementToZone, validateTextPlacement } from "@/lib/geometry/textLayout";
 import type { ExportPayload, PreflightResult } from "@/schemas/preflight-export";
 import { buildDefaultImagePlacement } from "@/lib/placement/image-insertion";
@@ -22,8 +19,6 @@ type Props = {
   designJobId: string;
   placement: PlacementDocument;
   onUpdated: (placement: PlacementDocument) => void;
-  onRunPreflight: () => Promise<PreflightResponse["data"] | null>;
-  onExportSvg: () => Promise<void>;
 };
 
 type ApiAsset = {
@@ -101,7 +96,7 @@ function createTextObject(kind: TextObject["kind"]): TextObject {
 
 const roundToHundredth = (value: number) => Math.round(value * 100) / 100;
 
-export default function PlacementEditor({ designJobId, placement, onUpdated, onRunPreflight, onExportSvg }: Props) {
+export default function PlacementEditor({ designJobId, placement, onUpdated }: Props) {
   const [doc, setDoc] = useState<PlacementDocument>(placementDocumentSchema.parse(placement));
   const [assets, setAssets] = useState<ApiAsset[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -114,7 +109,6 @@ export default function PlacementEditor({ designJobId, placement, onUpdated, onR
   const [batchIds, setBatchIds] = useState("");
   const [isRunningPreflight, setRunningPreflight] = useState(false);
   const [isExporting, setExporting] = useState(false);
-  const [preflightSummary, setPreflightSummary] = useState<PreflightResponse["data"] | null>(null);
 
   const selected = useMemo(
     () => doc.objects.find((entry) => entry.id === selectedObjectId) ?? null,
@@ -322,45 +316,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated, onR
     }
   };
 
-  const onRunPreflightClick = async () => {
-    try {
-      setPreflightSummary(await onRunPreflight());
-      setStatusMessage("Preflight complete");
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Preflight failed");
-    }
-  };
-
-  const onExportSvgClick = async () => {
-    try {
-      await onExportSvg();
-      setStatusMessage("SVG export downloaded");
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Export failed");
-    }
-  };
-
-  const updateWrap = (updater: (wrap: PlacementWrap) => PlacementWrap) => {
-    const currentWrap: PlacementWrap = doc.wrap ?? {
-      enabled: false,
-      diameterMm: 87,
-      wrapWidthMm: diameterToWrapWidthMm(87),
-      seamXmm: 0,
-      seamSafeMarginMm: 3,
-      microOverlapMm: 0.9
-    };
-
-    const nextWrap = updater(currentWrap);
-    commitDoc({
-      ...doc,
-      wrap: {
-        ...nextWrap,
-        wrapWidthMm: diameterToWrapWidthMm(nextWrap.diameterMm)
-      }
-    });
-  };
-
-  return <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">{/* UI unchanged */}
+  return <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <h2 className="text-base font-semibold">Placement & Text Tools (mm)</h2>
       <p className="min-h-5 text-xs text-slate-600" aria-live="polite">{autosave.statusMessage}</p>
       <p className="text-xs text-slate-600">Source of truth is the unwrapped 2D document.</p>
@@ -375,8 +331,6 @@ export default function PlacementEditor({ designJobId, placement, onUpdated, onR
         <button className="rounded border px-2 py-1 text-sm" onClick={() => addText("text_line")}>Add Text Line</button>
         <button className="rounded border px-2 py-1 text-sm" onClick={() => addText("text_block")}>Add Text Block</button>
         <button className="rounded border px-2 py-1 text-sm" onClick={() => addText("text_arc")}>Add Curved Text</button>
-        <button className="rounded border px-2 py-1 text-sm" onClick={onRunPreflightClick}>Run Preflight</button>
-        <button className="rounded border px-2 py-1 text-sm" onClick={onExportSvgClick}>Export SVG</button>
         <button className="rounded border px-2 py-1 text-sm disabled:opacity-50" disabled={undoStack.length === 0} onClick={() => {
           const prev = undoStack[undoStack.length - 1]; if (!prev) return; setRedoStack((stack) => [doc, ...stack]); setUndoStack((stack) => stack.slice(0, -1)); setDoc(prev);
         }}>Undo</button>
@@ -418,13 +372,6 @@ export default function PlacementEditor({ designJobId, placement, onUpdated, onR
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-2 rounded border border-slate-200 p-3 text-sm sm:grid-cols-2">
-        <label className="flex items-center gap-2"><input type="checkbox" checked={doc.wrap?.enabled ?? false} onChange={(e) => updateWrap((wrap) => ({ ...wrap, enabled: e.target.checked }))} /> Enable Cylindrical Wrap</label>
-        <label>Diameter (mm)<input type="number" step="0.1" value={doc.wrap?.diameterMm ?? 87} onChange={(e) => updateWrap((wrap) => ({ ...wrap, diameterMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
-        <label>Seam Safe Margin (mm)<input type="number" step="0.1" value={doc.wrap?.seamSafeMarginMm ?? 3} onChange={(e) => updateWrap((wrap) => ({ ...wrap, seamSafeMarginMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
-        <label>Micro Overlap (mm)<input type="number" step="0.1" value={doc.wrap?.microOverlapMm ?? 0.9} onChange={(e) => updateWrap((wrap) => ({ ...wrap, microOverlapMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
-        <p className="text-xs text-slate-600 sm:col-span-2">Wrap Width (computed): {(doc.wrap?.wrapWidthMm ?? diameterToWrapWidthMm(doc.wrap?.diameterMm ?? 87)).toFixed(3)} mm</p>
-      </div>
       {isTextObject(selected) ? <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label className="text-sm">Content<textarea value={selected.content} onChange={(event) => updateSelectedText((obj) => ({ ...obj, content: event.target.value }))} className="w-full rounded border px-2 py-1" /></label>
           <label className="text-sm">Font<select value={selected.fontFamily} onChange={(event) => updateSelectedText((obj) => ({ ...obj, fontFamily: event.target.value }))} className="w-full rounded border px-2 py-1">{curatedFonts.map((font) => <option key={font} value={font}>{font}</option>)}</select></label>
@@ -478,16 +425,6 @@ export default function PlacementEditor({ designJobId, placement, onUpdated, onR
           </div>
         ) : null}
       </section>
-      {preflightSummary ? <div className="space-y-2 rounded border border-slate-200 p-3 text-sm">
-        <h3 className="font-semibold">Preflight Summary</h3>
-        {preflightSummary.errors.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-red-600">{preflightSummary.errors.map((error, index) => <li key={`${error.code}-${index}`}>{error.message}</li>)}</ul> : <p className="text-emerald-700">No errors.</p>}
-        {preflightSummary.warnings.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-amber-700">{preflightSummary.warnings.map((warning, index) => <li key={`${warning.code}-${index}`}>{warning.message}</li>)}</ul> : <p className="text-slate-600">No warnings.</p>}
-        <table className="w-full text-left text-xs"><tbody>
-          <tr><th className="pr-2">wrapWidthMm</th><td>{preflightSummary.metrics.wrapWidthMm}</td></tr>
-          <tr><th className="pr-2">seamRiskCount</th><td>{preflightSummary.metrics.seamRiskCount}</td></tr>
-          <tr><th className="pr-2">minStrokeMmObserved</th><td>{preflightSummary.metrics.minStrokeMmObserved ?? "n/a"}</td></tr>
-        </tbody></table>
-      </div> : null}
       <pre className="max-h-72 overflow-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(doc ?? createDefaultPlacementDocument(), null, 2)}</pre>
       <p className="min-h-5 text-xs text-slate-700">{statusMessage}</p>
     </section>;

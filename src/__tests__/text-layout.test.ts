@@ -69,7 +69,7 @@ describe("text layout", () => {
 
   it("computes rotation-aware bounds and clamp", () => {
     const bounds = computeTextBoundsMm(baseText);
-    expect(bounds.widthMm).toBeGreaterThan(19);
+    expect(bounds.widthMm).toBeGreaterThan(baseText.boxWidthMm);
 
     const clamped = clampTextPlacementToZone(baseText, { widthMm: 60, heightMm: 40 });
     expect(clamped.offsetXMm).toBe(40);

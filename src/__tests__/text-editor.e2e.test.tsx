@@ -52,8 +52,6 @@ describe("PlacementEditor text workflow", () => {
           designJobId="job_1"
           placement={createDefaultPlacementDocument()}
           onUpdated={jest.fn()}
-          onRunPreflight={async () => null}
-          onExportSvg={async () => {}}
         />
       );
     });
@@ -75,5 +73,6 @@ describe("PlacementEditor text workflow", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith("/api/text/outline", expect.objectContaining({ method: "POST" }));
+    fetchMock.mockRestore();
   });
 });

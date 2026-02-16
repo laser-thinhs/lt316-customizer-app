@@ -3,14 +3,14 @@ import {
   PlacementInput,
   placementDocumentSchema,
   placementSchema,
-  upgradePlacementToV3
+  upgradePlacementToV2
 } from "@/schemas/placement";
 
 export function parsePlacementDocument(raw: unknown): PlacementDocument {
   const parsed = placementSchema.parse(raw as PlacementInput);
-  return upgradePlacementToV3(parsed);
+  return upgradePlacementToV2(parsed);
 }
 
-export function isPlacementDocument(raw: unknown): boolean {
+export function isPlacementV2(raw: unknown): boolean {
   return placementDocumentSchema.safeParse(raw).success;
 }
