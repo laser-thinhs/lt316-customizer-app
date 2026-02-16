@@ -125,6 +125,7 @@ const placementDocumentBaseSchema = z.object({
   machine: z.object({
     strokeWidthWarningThresholdMm: positiveFiniteNumber.default(0.1)
   }),
+  objects: z.array(placementObjectSchema),
   objects: z.array(
     z.union([legacyImageObjectSchema, imageObjectSchema, vectorObjectSchema, textLineObjectSchema, textBlockObjectSchema, textArcObjectSchema])
   ),
