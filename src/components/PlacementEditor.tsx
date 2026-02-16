@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
+  ImagePlacementObject,
   PlacementDocument,
   PlacementObject,
   TextObject,
@@ -10,11 +11,26 @@ import {
 } from "@/schemas/placement";
 import { clampTextPlacementToZone, validateTextPlacement } from "@/lib/geometry/textLayout";
 import type { ExportPayload, PreflightResult } from "@/schemas/preflight-export";
+import { buildDefaultImagePlacement } from "@/lib/placement/image-insertion";
 
 type Props = {
   designJobId: string;
   placement: PlacementDocument;
   onUpdated: (placement: PlacementDocument) => void;
+};
+
+type ApiAsset = {
+  id: string;
+  designJobId: string;
+  kind: string;
+  originalName: string | null;
+  mimeType: string;
+  byteSize: number | null;
+  widthPx: number | null;
+  heightPx: number | null;
+  url: string;
+  path: string;
+  createdAt: string;
 };
 
 const curatedFonts = ["Inter", "Roboto Mono"];
@@ -26,6 +42,10 @@ function randomId() {
 
 function isTextObject(object: PlacementObject | null): object is TextObject {
   return Boolean(object && (object.kind === "text_line" || object.kind === "text_block" || object.kind === "text_arc"));
+}
+
+function isImageObject(object: PlacementObject | null): object is ImagePlacementObject {
+  return Boolean(object && object.kind === "image");
 }
 
 function createTextObject(kind: TextObject["kind"]): TextObject {
@@ -72,8 +92,11 @@ function createTextObject(kind: TextObject["kind"]): TextObject {
   return { ...base, kind };
 }
 
+const roundToHundredth = (value: number) => Math.round(value * 100) / 100;
+
 export default function PlacementEditor({ designJobId, placement, onUpdated }: Props) {
   const [doc, setDoc] = useState<PlacementDocument>(placementDocumentSchema.parse(placement));
+  const [assets, setAssets] = useState<ApiAsset[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSaving, setSaving] = useState(false);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(doc.objects[0]?.id ?? null);
@@ -99,11 +122,40 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     });
   }, [selected, doc.canvas, doc.machine.strokeWidthWarningThresholdMm]);
 
+  const groupedIssues = useMemo(() => {
+    const issues = preflight?.issues ?? [];
+    return {
+      error: issues.filter((issue) => issue.severity === "error"),
+      warning: issues.filter((issue) => issue.severity === "warning"),
+      info: issues.filter((issue) => issue.severity === "info")
+    };
+  }, [preflight]);
+
   const commitDoc = (next: PlacementDocument) => {
     setUndoStack((prev) => [...prev.slice(-29), doc]);
     setRedoStack([]);
     setDoc(next);
   };
+
+  const refreshAssets = async () => {
+    try {
+      const res = await fetch(`/api/design-jobs/${designJobId}/assets`);
+      if (!res || typeof res.json !== "function") {
+        setAssets([]);
+        return;
+      }
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error?.message || "Failed to load assets");
+      setAssets(Array.isArray(json.data) ? (json.data as ApiAsset[]) : []);
+    } catch {
+      setAssets([]);
+    }
+  };
+
+  useEffect(() => {
+    void refreshAssets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [designJobId]);
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -141,6 +193,63 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     commitDoc({ ...doc, objects: doc.objects.map((entry) => (entry.id === selected.id ? next : entry)) });
   };
 
+  const updateSelectedImage = (patch: Partial<ImagePlacementObject>) => {
+    if (!isImageObject(selected)) return;
+    const next: ImagePlacementObject = {
+      ...selected,
+      ...patch,
+      widthMm: Math.max(0.01, roundToHundredth(Number(patch.widthMm ?? selected.widthMm))),
+      heightMm: Math.max(0.01, roundToHundredth(Number(patch.heightMm ?? selected.heightMm))),
+      xMm: roundToHundredth(Number(patch.xMm ?? selected.xMm)),
+      yMm: roundToHundredth(Number(patch.yMm ?? selected.yMm)),
+      rotationDeg: roundToHundredth(Number(patch.rotationDeg ?? selected.rotationDeg)),
+      opacity: Math.min(1, Math.max(0, Number(patch.opacity ?? selected.opacity)))
+    };
+
+    if (!Number.isFinite(next.xMm) || !Number.isFinite(next.yMm) || !Number.isFinite(next.widthMm) || !Number.isFinite(next.heightMm)) {
+      setStatusMessage("Image placement values must be finite numbers.");
+      return;
+    }
+
+    commitDoc({ ...doc, objects: doc.objects.map((entry) => (entry.id === selected.id ? next : entry)) });
+  };
+
+  const onUploadArtwork = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const form = new FormData();
+      form.append("designJobId", designJobId);
+      form.append("file", file);
+      const res = await fetch("/api/assets", { method: "POST", body: form });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error?.message || "Upload failed");
+      setStatusMessage(`Uploaded ${json.data.originalName ?? file.name}`);
+      await refreshAssets();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Upload failed");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const onAddAssetToCanvas = (asset: ApiAsset) => {
+    try {
+      const imageObj = buildDefaultImagePlacement({
+        assetId: asset.id,
+        widthPx: asset.widthPx,
+        heightPx: asset.heightPx,
+        canvas: doc.canvas
+      });
+      commitDoc({ ...doc, objects: [...doc.objects, imageObj] });
+      setSelectedObjectId(imageObj.id);
+      setStatusMessage(`Added ${asset.originalName ?? asset.id} to canvas`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not add image");
+    }
+  };
+
   const onConvertToOutline = async () => {
     if (!selected) return;
     const res = await fetch("/api/text/outline", {
@@ -155,7 +264,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     }
 
     commitDoc({ ...doc, objects: [...doc.objects, json.data.derivedVectorObject as PlacementObject] });
-    setStatusMessage(["Outline generated", ...(json.data.warnings as string[])].join(" | "));
+    setStatusMessage(["Outline generated", ...((json.data?.warnings as string[] | undefined) ?? [])].join(" | "));
   };
 
   const runPreflight = async () => {
@@ -176,19 +285,12 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
 
   const exportJob = async () => {
     setExporting(true);
-    setStatusMessage(null);
     try {
       const res = await fetch(`/api/design-jobs/${designJobId}/export`, { method: "POST" });
       const json = await res.json();
-      if (!res.ok) {
-        if (res.status === 422) {
-          setPreflight(json?.error?.details as PreflightResult);
-        }
-        throw new Error(json?.error?.message || "Export failed");
-      }
-
+      if (!res.ok) throw new Error(json?.error?.message || "Export failed");
       setExportPayload(json.data as ExportPayload);
-      setStatusMessage("Export generated.");
+      setStatusMessage("Export package generated.");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Unknown export error");
     } finally {
@@ -197,22 +299,17 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   };
 
   const exportBatch = async () => {
-    const ids = batchIds.split(",").map((entry) => entry.trim()).filter(Boolean);
-    if (ids.length === 0) {
-      setStatusMessage("Enter at least one job id for batch export.");
-      return;
-    }
-
     setExporting(true);
     try {
+      const jobIds = batchIds.split(",").map((entry) => entry.trim()).filter(Boolean);
       const res = await fetch("/api/design-jobs/export-batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ designJobIds: ids })
+        body: JSON.stringify({ designJobIds: jobIds })
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message || "Batch export failed");
-      setStatusMessage(`Batch export completed: ${json.data.results.filter((entry: { success: boolean }) => entry.success).length}/${ids.length} succeeded.`);
+      setStatusMessage(`Batch exported ${json.data.count} jobs.`);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Unknown batch export error");
     } finally {
@@ -220,16 +317,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     }
   };
 
-  const groupedIssues = useMemo(() => {
-    const issues = preflight?.issues ?? [];
-    return {
-      error: issues.filter((issue) => issue.severity === "error"),
-      warning: issues.filter((issue) => issue.severity === "warning"),
-      info: issues.filter((issue) => issue.severity === "info")
-    };
-  }, [preflight]);
-
-  return <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">{/* UI unchanged */}
+  return <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <h2 className="text-base font-semibold">Placement & Text Tools (mm)</h2>
       <p className="text-xs text-slate-600">Source of truth is the unwrapped 2D document.</p>
       <div className="flex flex-wrap gap-2">
@@ -243,7 +331,40 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
           const next = redoStack[0]; if (!next) return; setUndoStack((stack) => [...stack, doc]); setRedoStack((stack) => stack.slice(1)); setDoc(next);
         }}>Redo</button>
       </div>
+
+      <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
+        <h3 className="text-sm font-semibold">Artwork Assets</h3>
+        <label className="block text-sm">
+          <span>Upload Artwork</span>
+          <input type="file" accept=".svg,.png,.jpg,.jpeg,.webp" className="mt-1 block w-full text-xs" onChange={onUploadArtwork} />
+        </label>
+        <div className="max-h-44 space-y-2 overflow-auto">
+          {assets.map((asset) => (
+            <div key={asset.id} className="flex items-center justify-between gap-2 rounded border bg-white p-2 text-xs">
+              <div>
+                <p className="font-medium">{asset.originalName ?? asset.id}</p>
+                <p className="text-slate-600">{asset.widthPx ?? "?"}×{asset.heightPx ?? "?"} px</p>
+              </div>
+              <button className="rounded border px-2 py-1" onClick={() => onAddAssetToCanvas(asset)}>Add to Canvas</button>
+            </div>
+          ))}
+          {assets.length === 0 ? <p className="text-xs text-slate-600">No artwork uploaded for this job yet.</p> : null}
+        </div>
+      </section>
+
       <label className="block text-sm"><span>Selected Object</span><select value={selectedObjectId ?? ""} onChange={(event) => setSelectedObjectId(event.target.value || null)} className="w-full rounded border px-2 py-1"><option value="">None</option>{doc.objects.map((entry) => (<option key={entry.id} value={entry.id}>{entry.kind}:{entry.id.slice(0, 8)}</option>))}</select></label>
+
+      {isImageObject(selected) ? (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="text-sm">X (mm)<input type="number" step="0.01" value={selected.xMm} onChange={(e) => updateSelectedImage({ xMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Y (mm)<input type="number" step="0.01" value={selected.yMm} onChange={(e) => updateSelectedImage({ yMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Width (mm)<input type="number" min="0.01" step="0.01" value={selected.widthMm} onChange={(e) => updateSelectedImage({ widthMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Height (mm)<input type="number" min="0.01" step="0.01" value={selected.heightMm} onChange={(e) => updateSelectedImage({ heightMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Rotation (deg)<input type="number" step="0.01" value={selected.rotationDeg} onChange={(e) => updateSelectedImage({ rotationDeg: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Opacity<input type="number" min="0" max="1" step="0.01" value={selected.opacity} onChange={(e) => updateSelectedImage({ opacity: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+        </div>
+      ) : null}
+
       {isTextObject(selected) ? <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label className="text-sm">Content<textarea value={selected.content} onChange={(event) => updateSelectedText((obj) => ({ ...obj, content: event.target.value }))} className="w-full rounded border px-2 py-1" /></label>
           <label className="text-sm">Font<select value={selected.fontFamily} onChange={(event) => updateSelectedText((obj) => ({ ...obj, fontFamily: event.target.value }))} className="w-full rounded border px-2 py-1">{curatedFonts.map((font) => <option key={font} value={font}>{font}</option>)}</select></label>
