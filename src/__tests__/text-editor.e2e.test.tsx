@@ -8,9 +8,9 @@ import { createDefaultPlacementDocument } from "@/schemas/placement";
 
 describe("PlacementEditor text workflow", () => {
   it("adds curved text, updates controls, converts outline and persists", async () => {
-    const fetchMock = jest
-      .spyOn(global, "fetch")
-      .mockResolvedValue({ ok: true, json: async () => ({ data: { placementJson: createDefaultPlacementDocument() } }) } as Response)
+    (global as unknown as { fetch: jest.Mock }).fetch = jest.fn();
+    const fetchMock = (global as unknown as { fetch: jest.Mock }).fetch
+            .mockResolvedValue({ ok: true, json: async () => ({ data: { placementJson: createDefaultPlacementDocument() } }) } as Response)
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -43,6 +43,8 @@ describe("PlacementEditor text workflow", () => {
           designJobId="job_1"
           placement={createDefaultPlacementDocument()}
           onUpdated={jest.fn()}
+          onRunPreflight={async () => null}
+          onExportSvg={async () => {}}
         />
       );
     });
@@ -64,6 +66,5 @@ describe("PlacementEditor text workflow", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith("/api/text/outline", expect.objectContaining({ method: "POST" }));
-    fetchMock.mockRestore();
   });
 });
