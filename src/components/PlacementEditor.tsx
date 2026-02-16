@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ImagePlacementObject,
   PlacementDocument,
@@ -12,6 +12,8 @@ import {
 import { clampTextPlacementToZone, validateTextPlacement } from "@/lib/geometry/textLayout";
 import type { ExportPayload, PreflightResult } from "@/schemas/preflight-export";
 import { buildDefaultImagePlacement } from "@/lib/placement/image-insertion";
+import { useAutosavePlacement } from "@/hooks/useAutosavePlacement";
+import { arePlacementsEqual } from "@/lib/placement/stableCompare";
 
 type Props = {
   designJobId: string;
@@ -98,7 +100,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const [doc, setDoc] = useState<PlacementDocument>(placementDocumentSchema.parse(placement));
   const [assets, setAssets] = useState<ApiAsset[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [isSaving, setSaving] = useState(false);
+  const [serverDoc, setServerDoc] = useState<PlacementDocument>(placementDocumentSchema.parse(placement));
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(doc.objects[0]?.id ?? null);
   const [undoStack, setUndoStack] = useState<PlacementDocument[]>([]);
   const [redoStack, setRedoStack] = useState<PlacementDocument[]>([]);
@@ -157,28 +159,25 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designJobId]);
 
-  useEffect(() => {
-    const timer = setTimeout(async () => {
-      setSaving(true);
-      try {
-        const res = await fetch(`/api/design-jobs/${designJobId}/placement`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ placementJson: doc })
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json?.error?.message || "Failed to save placement");
-        onUpdated(json.data.placementJson as PlacementDocument);
-        setStatusMessage("Autosaved");
-      } catch (error) {
-        setStatusMessage(error instanceof Error ? error.message : "Unknown error");
-      } finally {
-        setSaving(false);
-      }
-    }, 350);
+  const handleRecoveredPlacement = useCallback((localDraft: PlacementDocument) => {
+    setDoc(localDraft);
+  }, []);
 
-    return () => clearTimeout(timer);
-  }, [designJobId, doc, onUpdated]);
+  const handleSavedPlacement = useCallback((savedDoc: PlacementDocument) => {
+    if (!arePlacementsEqual(doc, savedDoc)) {
+      setDoc(savedDoc);
+    }
+    setServerDoc(savedDoc);
+    onUpdated(savedDoc);
+  }, [doc, onUpdated]);
+
+  const autosave = useAutosavePlacement({
+    designJobId,
+    placement: doc,
+    serverPlacement: serverDoc,
+    onPlacementRecovered: handleRecoveredPlacement,
+    onPlacementSaved: handleSavedPlacement
+  });
 
   const addText = (kind: TextObject["kind"]) => {
     const obj = createTextObject(kind);
@@ -319,7 +318,15 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
 
   return <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <h2 className="text-base font-semibold">Placement & Text Tools (mm)</h2>
+      <p className="min-h-5 text-xs text-slate-600" aria-live="polite">{autosave.statusMessage}</p>
       <p className="text-xs text-slate-600">Source of truth is the unwrapped 2D document.</p>
+      {autosave.hasRecoveredDraft ? (
+        <div className="flex flex-wrap items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <span>Recovered unsaved local edits.</span>
+          <button className="rounded border border-amber-400 px-2 py-1" onClick={autosave.useLocalDraft}>Use Local Draft</button>
+          <button className="rounded border border-amber-400 px-2 py-1" onClick={autosave.useServerVersion}>Use Server Version</button>
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         <button className="rounded border px-2 py-1 text-sm" onClick={() => addText("text_line")}>Add Text Line</button>
         <button className="rounded border px-2 py-1 text-sm" onClick={() => addText("text_block")}>Add Text Block</button>
@@ -419,6 +426,6 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
         ) : null}
       </section>
       <pre className="max-h-72 overflow-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(doc ?? createDefaultPlacementDocument(), null, 2)}</pre>
-      <p className="text-xs text-slate-700">{isSaving ? "Saving..." : statusMessage}</p>
+      <p className="min-h-5 text-xs text-slate-700">{statusMessage}</p>
     </section>;
 }

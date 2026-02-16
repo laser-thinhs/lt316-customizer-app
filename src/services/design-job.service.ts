@@ -62,7 +62,7 @@ export async function updateDesignJobPlacement(id: string, rawInput: unknown) {
     }
   });
 
-  return job;
+  return { ...job, placementJson: parsePlacementDocument(job.placementJson) };
 }
 
 export async function getDesignJobById(id: string) {
