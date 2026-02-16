@@ -8,31 +8,40 @@ import { createDefaultPlacementDocument } from "@/schemas/placement";
 
 describe("PlacementEditor text workflow", () => {
   it("adds curved text, updates controls, converts outline and persists", async () => {
-    const fetchMock = jest
-      .spyOn(global, "fetch")
-      .mockResolvedValue({ ok: true, json: async () => ({ data: { placementJson: createDefaultPlacementDocument() } }) } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: {
-            derivedVectorObject: {
-              id: "o1",
-              kind: "vector",
-              pathData: "M0 0 L1 0 L1 1 Z",
-              rotationDeg: 0,
-              anchor: "center",
-              offsetXMm: 0,
-              offsetYMm: 0,
-              boxWidthMm: 1,
-              boxHeightMm: 1,
-              mirrorX: false,
-              mirrorY: false,
-              zIndex: 99
-            },
-            warnings: []
-          }
-        })
-      } as Response);
+    const fetchMock = jest.spyOn(global, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.includes("/assets")) {
+        return { ok: true, json: async () => ({ data: [] }) } as Response;
+      }
+
+      if (url.includes("/api/text/outline")) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: {
+              derivedVectorObject: {
+                id: "o1",
+                kind: "vector",
+                pathData: "M0 0 L1 0 L1 1 Z",
+                rotationDeg: 0,
+                anchor: "center",
+                offsetXMm: 0,
+                offsetYMm: 0,
+                boxWidthMm: 1,
+                boxHeightMm: 1,
+                mirrorX: false,
+                mirrorY: false,
+                zIndex: 99
+              },
+              warnings: []
+            }
+          })
+        } as Response;
+      }
+
+      return { ok: true, json: async () => ({ data: { placementJson: createDefaultPlacementDocument() } }) } as Response;
+    });
 
     const container = document.createElement("div");
     const root = createRoot(container);

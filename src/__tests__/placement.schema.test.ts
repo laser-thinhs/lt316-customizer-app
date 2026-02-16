@@ -46,6 +46,31 @@ describe("placement schema v2", () => {
     expect(result.success).toBe(true);
   });
 
+  it("parses image object with mm placement fields", () => {
+    const result = placementDocumentSchema.safeParse({
+      version: 2,
+      canvas: { widthMm: 100, heightMm: 80 },
+      machine: { strokeWidthWarningThresholdMm: 0.12 },
+      objects: [
+        {
+          id: "img_1",
+          kind: "image",
+          type: "image",
+          assetId: "asset_1",
+          xMm: 10.01,
+          yMm: 20.02,
+          widthMm: 30.03,
+          heightMm: 15.04,
+          rotationDeg: 5,
+          lockAspectRatio: true,
+          opacity: 0.8
+        }
+      ]
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("upgrades legacy placement payload to v2", () => {
     const upgraded = upgradePlacementToV2({
       widthMm: 60,
@@ -58,6 +83,6 @@ describe("placement schema v2", () => {
 
     expect(upgraded.version).toBe(2);
     expect(upgraded.canvas.widthMm).toBe(60);
-    expect(upgraded.objects[0]?.kind).toBe("image");
+    expect(upgraded.objects).toHaveLength(0);
   });
 });

@@ -1,7 +1,7 @@
 import { DesignJob, MachineProfile, ProductProfile } from "@prisma/client";
 import { parsePlacementDocument } from "@/lib/placement/document";
 import { ExportManifest, PreflightIssue, PreflightResult, exportManifestSchema, preflightResultSchema } from "@/schemas/preflight-export";
-import { PlacementObject } from "@/schemas/placement";
+import { ImagePlacementObject, PlacementObject } from "@/schemas/placement";
 
 type DesignJobWithAssets = DesignJob & { assets: { id: string; filePath: string }[] };
 
@@ -15,7 +15,11 @@ function toNumber(value: unknown) {
   return typeof value === "number" ? value : Number(value);
 }
 
-function anchorToTopLeft(object: PlacementObject) {
+function isImageObject(object: PlacementObject): object is ImagePlacementObject {
+  return object.kind === "image";
+}
+
+function anchorToTopLeft(object: Exclude<PlacementObject, ImagePlacementObject>) {
   const halfW = object.boxWidthMm / 2;
   const halfH = object.boxHeightMm / 2;
 
@@ -36,6 +40,15 @@ function anchorToTopLeft(object: PlacementObject) {
 }
 
 function toAbsoluteBounds(object: PlacementObject) {
+  if (isImageObject(object)) {
+    return {
+      xMm: roundMm(object.xMm),
+      yMm: roundMm(object.yMm),
+      widthMm: roundMm(object.widthMm),
+      heightMm: roundMm(object.heightMm)
+    };
+  }
+
   const { xMm, yMm } = anchorToTopLeft(object);
   return {
     xMm: roundMm(xMm),
@@ -50,7 +63,7 @@ function intersects(a: ReturnType<typeof toAbsoluteBounds>, b: ReturnType<typeof
 }
 
 function orderObjects(objects: PlacementObject[]) {
-  return [...objects].sort((a, b) => (a.zIndex - b.zIndex) || a.id.localeCompare(b.id));
+  return [...objects].sort((a, b) => (("zIndex" in a ? a.zIndex : 0) - ("zIndex" in b ? b.zIndex : 0)) || a.id.localeCompare(b.id));
 }
 
 function transformForObject(object: PlacementObject, bounds: ReturnType<typeof toAbsoluteBounds>) {
@@ -58,7 +71,7 @@ function transformForObject(object: PlacementObject, bounds: ReturnType<typeof t
   const cy = bounds.yMm + bounds.heightMm / 2;
   const transforms: string[] = [];
   if (object.rotationDeg !== 0) transforms.push(`rotate(${roundMm(object.rotationDeg)} ${roundMm(cx)} ${roundMm(cy)})`);
-  if (object.mirrorX || object.mirrorY) {
+  if (!isImageObject(object) && (object.mirrorX || object.mirrorY)) {
     transforms.push(`translate(${roundMm(cx)} ${roundMm(cy)})`);
     transforms.push(`scale(${object.mirrorX ? -1 : 1} ${object.mirrorY ? -1 : 1})`);
     transforms.push(`translate(${roundMm(-cx)} ${roundMm(-cy)})`);
@@ -114,7 +127,10 @@ export function runDesignJobPreflight(input: {
   for (const object of orderedObjects) {
     const bounds = toAbsoluteBounds(object);
 
-    if (Number.isNaN(object.boxWidthMm) || Number.isNaN(object.boxHeightMm)) {
+    const widthMm = isImageObject(object) ? object.widthMm : object.boxWidthMm;
+    const heightMm = isImageObject(object) ? object.heightMm : object.boxHeightMm;
+
+    if (!Number.isFinite(widthMm) || !Number.isFinite(heightMm)) {
       issues.push({
         code: "INVALID_OBJECT_DATA",
         severity: "error",
@@ -155,7 +171,7 @@ export function runDesignJobPreflight(input: {
       });
     }
 
-    if (object.kind === "image" && !knownAssets.has(object.src)) {
+    if (object.kind === "image" && !knownAssets.has(object.assetId)) {
       issues.push({
         code: "MISSING_ASSET_REFERENCE",
         severity: "error",
@@ -213,17 +229,28 @@ export function buildExportManifest(
   const ordered = orderObjects(placement.objects).map((object) => ({
     id: object.id,
     kind: object.kind,
-    zIndex: object.zIndex,
-    source: {
-      anchor: object.anchor,
-      offsetXMm: roundMm(object.offsetXMm),
-      offsetYMm: roundMm(object.offsetYMm),
-      boxWidthMm: roundMm(object.boxWidthMm),
-      boxHeightMm: roundMm(object.boxHeightMm),
-      rotationDeg: roundMm(object.rotationDeg),
-      mirrorX: object.mirrorX,
-      mirrorY: object.mirrorY
-    },
+    zIndex: "zIndex" in object ? object.zIndex : 0,
+    source: object.kind === "image"
+      ? {
+          anchor: "top-left",
+          offsetXMm: roundMm(object.xMm),
+          offsetYMm: roundMm(object.yMm),
+          boxWidthMm: roundMm(object.widthMm),
+          boxHeightMm: roundMm(object.heightMm),
+          rotationDeg: roundMm(object.rotationDeg),
+          mirrorX: false,
+          mirrorY: false
+        }
+      : {
+          anchor: object.anchor,
+          offsetXMm: roundMm(object.offsetXMm),
+          offsetYMm: roundMm(object.offsetYMm),
+          boxWidthMm: roundMm(object.boxWidthMm),
+          boxHeightMm: roundMm(object.boxHeightMm),
+          rotationDeg: roundMm(object.rotationDeg),
+          mirrorX: object.mirrorX,
+          mirrorY: object.mirrorY
+        },
     absoluteBoundsMm: toAbsoluteBounds(object)
   }));
 
@@ -262,7 +289,7 @@ export function buildExportSvg(job: DesignJob, productProfile: ProductProfile) {
     const transformAttr = transform ? ` transform="${transform}"` : "";
 
     if (object.kind === "image") {
-      return `<image id="${escapeXml(object.id)}" x="${bounds.xMm}" y="${bounds.yMm}" width="${bounds.widthMm}" height="${bounds.heightMm}" href="${escapeXml(object.src)}" preserveAspectRatio="none"${transformAttr} />`;
+      return `<image id="${escapeXml(object.id)}" x="${bounds.xMm}" y="${bounds.yMm}" width="${bounds.widthMm}" height="${bounds.heightMm}" href="${escapeXml(`/api/assets/${object.assetId}`)}" opacity="${roundMm(object.opacity)}" preserveAspectRatio="none"${transformAttr} />`;
     }
 
     if (object.kind === "vector") {

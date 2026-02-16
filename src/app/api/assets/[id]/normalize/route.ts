@@ -22,7 +22,9 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
         data: {
           designJobId: asset.designJobId,
           kind: "normalized",
+          originalName: asset.originalName,
           mimeType: "image/svg+xml",
+          byteSize: Buffer.byteLength(normalized, "utf8"),
           filePath: outputPath
         }
       });
@@ -36,7 +38,9 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       data: {
         designJobId: asset.designJobId,
         kind: "normalized",
+        originalName: asset.originalName,
         mimeType: "image/png",
+        byteSize: source.byteLength,
         filePath: outputPath,
         widthPx: asset.widthPx,
         heightPx: asset.heightPx
