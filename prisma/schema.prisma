@@ -97,6 +97,7 @@ model DesignJob {
   exportZipAssetId String?
   proofTemplateId  String?
   proofPlacementJson Json?
+  proofCompositionJson Json?
   proofStatus      String?         @default("draft")
   proofError       String?
   batchRunItemId   String?         @unique
