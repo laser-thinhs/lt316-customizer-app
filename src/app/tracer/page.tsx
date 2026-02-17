@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type TracerSettings = {
   mode: "auto" | "bw" | "color";
@@ -59,6 +60,8 @@ export default function TracerPage() {
   const [status, setStatus] = useState<"idle" | "uploading" | "tracing" | "done" | "failed">("idle");
   const [svg, setSvg] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [outputSvgAssetId, setOutputSvgAssetId] = useState<string | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     const raw = localStorage.getItem("tracer:last-settings");
@@ -107,6 +110,7 @@ export default function TracerPage() {
     }
 
     setSvg(payload.result.svg);
+    setOutputSvgAssetId(payload.result.outputSvgAssetId ?? null);
     setStatus("done");
   }
 
@@ -155,6 +159,25 @@ export default function TracerPage() {
       {svg ? (
         <section className="space-y-2">
           <div className="flex gap-2">
+            <button
+              className="rounded border px-3 py-1"
+              disabled={!outputSvgAssetId}
+              onClick={async () => {
+                if (!outputSvgAssetId) return;
+                const res = await fetch("/api/proof/jobs", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ svgAssetId: outputSvgAssetId, templateId: "40oz_tumbler_wrap" })
+                });
+                const payload = await res.json();
+                if (payload.ok) {
+                  router.push(`/proof?jobId=${payload.data.jobId}`);
+                }
+              }}
+            >
+              Send to Proof
+            </button>
+
             <button
               className="rounded border px-3 py-1"
               onClick={() => {

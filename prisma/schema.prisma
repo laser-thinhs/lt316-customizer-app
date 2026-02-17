@@ -89,6 +89,13 @@ model DesignJob {
   proofImagePath   String?
   placementHash    String?
   templateId       String?
+  sourceSvgAssetId String?
+  proofPngAssetId  String?
+  exportZipAssetId String?
+  proofPlacementJson Json?
+  proofTemplateId  String?
+  proofStatus      String          @default("idle")
+  proofError       String?
   batchRunItemId   String?         @unique
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
