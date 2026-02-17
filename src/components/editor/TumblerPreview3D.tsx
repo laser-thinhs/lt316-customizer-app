@@ -55,8 +55,8 @@ export default function TumblerPreview3D({
 
         // Cylinder
         const radius = (diameterMm ?? 76.2) / 2;
-        const height = heightMm ?? 100;
-        const geometry = new THREE.CylinderGeometry(radius, radius, height, 64, 32);
+        const cylinderHeight = heightMm ?? 100;
+        const geometry = new THREE.CylinderGeometry(radius, radius, cylinderHeight, 64, 32);
 
         // Canvas texture
         const canvas = document.createElement("canvas");

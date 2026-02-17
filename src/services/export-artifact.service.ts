@@ -5,6 +5,7 @@ import { ExportPayload, PreflightIssue } from "@/schemas/preflight-export";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { asAssetPublicUrl, createAssetId, ensureDesignJobAssetDir, sanitizeFilename } from "@/lib/assets";
+import { Prisma } from "@prisma/client";
 
 export async function getDesignJobExportContext(designJobId: string) {
   const job = await prisma.designJob.findUnique({
@@ -62,7 +63,7 @@ export async function exportDesignJob(designJobId: string): Promise<ExportPayloa
         kind: "svg",
         version: manifest.version,
         preflightStatus: preflight.status,
-        payloadJson: null,
+        payloadJson: Prisma.JsonNull,
         textContent: svg
       }
     ]

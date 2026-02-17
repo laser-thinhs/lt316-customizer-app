@@ -29,6 +29,35 @@ type Props = {
 
 type Toast = { id: number; kind: "success" | "error"; message: string };
 
+function toLegacyPlacement(input: PlacementInput): {
+  widthMm: number;
+  heightMm: number;
+  offsetXMm: number;
+  offsetYMm: number;
+  rotationDeg: number;
+  anchor: "center" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+} {
+  if ("widthMm" in input) {
+    return {
+      widthMm: input.widthMm,
+      heightMm: input.heightMm,
+      offsetXMm: input.offsetXMm,
+      offsetYMm: input.offsetYMm,
+      rotationDeg: input.rotationDeg,
+      anchor: input.anchor
+    };
+  }
+
+  return {
+    widthMm: input.canvas.widthMm,
+    heightMm: input.canvas.heightMm,
+    offsetXMm: 0,
+    offsetYMm: 0,
+    rotationDeg: 0,
+    anchor: "top-left"
+  };
+}
+
 function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   return (
     <label className="space-y-1 text-sm">
@@ -98,7 +127,7 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
       unwrapWidthMm: circumferenceMm(profile.diameterMm),
       unwrapHeightMm: profile.engraveZoneHeightMm
     });
-    store.setPlacement(initialPlacement);
+    store.setPlacement(toLegacyPlacement(initialPlacement));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.diameterMm, profile.engraveZoneHeightMm]);
 
@@ -118,7 +147,7 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
   }, [store.placement]);
 
   const savePlacement = async (silent = false) => {
-    const previous = initialPlacement;
+    const previous = toLegacyPlacement(initialPlacement);
     setSaving(true);
     try {
       const res = await fetch(`/api/design-jobs/${jobId}/placement`, {
@@ -327,7 +356,15 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
           <NumberField label="Offset Y (mm)" value={store.placement.offsetYMm} onChange={(value) => store.patchPlacement({ offsetYMm: value })} />
           <NumberField label="Rotation (deg)" value={store.placement.rotationDeg} onChange={(value) => store.patchPlacement({ rotationDeg: value })} />
         </div>
-        <select value={store.placement.anchor} onChange={(e) => store.patchPlacement({ anchor: e.target.value as PlacementInput["anchor"] })} className="w-full rounded border px-2 py-1 text-sm">
+        <select
+          value={store.placement.anchor}
+          onChange={(e) =>
+            store.patchPlacement({
+              anchor: e.target.value as "center" | "top-left" | "top-right" | "bottom-left" | "bottom-right"
+            })
+          }
+          className="w-full rounded border px-2 py-1 text-sm"
+        >
           {(["center", "top-left", "top-right", "bottom-left", "bottom-right"] as const).map((anchor) => (
             <option key={anchor} value={anchor}>{anchor}</option>
           ))}

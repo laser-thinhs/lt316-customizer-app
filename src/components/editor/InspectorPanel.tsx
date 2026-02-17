@@ -195,7 +195,9 @@ export default function InspectorPanel({
           </section>
         </>
       ) : (
-        <p className="rounded border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-600">Select an object to edit transform, appearance, and actions.</p>
+        <p className="rounded border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-600">
+          Select an object to edit transform, appearance, and actions.
+        </p>
       )}
     </aside>
   );

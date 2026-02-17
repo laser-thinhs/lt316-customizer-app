@@ -41,6 +41,9 @@ export function buildDefaultImagePlacement(params: {
     yMm: roundMm((canvas.heightMm - heightMm) / 2),
     widthMm: roundMm(widthMm),
     heightMm: roundMm(heightMm),
+    zIndex: 0,
+    visible: true,
+    locked: false,
     rotationDeg: 0,
     lockAspectRatio: true,
     opacity: 1

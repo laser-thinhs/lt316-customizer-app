@@ -28,6 +28,15 @@ export type ProductProfileLike = {
 type Bounds = { minX: number; maxX: number; minY: number; maxY: number };
 
 function boundsForObject(object: PlacementObject): Bounds {
+  if (object.kind === "image") {
+    return {
+      minX: object.xMm,
+      maxX: object.xMm + object.widthMm,
+      minY: object.yMm,
+      maxY: object.yMm + object.heightMm
+    };
+  }
+
   const x = object.offsetXMm;
   const y = object.offsetYMm;
   const width = object.boxWidthMm;
@@ -44,6 +53,8 @@ function boundsForObject(object: PlacementObject): Bounds {
       return { minX: x, maxX: x + width, minY: y - height, maxY: y };
     case "bottom-right":
       return { minX: x - width, maxX: x, minY: y - height, maxY: y };
+    default:
+      return { minX: x, maxX: x + width, minY: y, maxY: y + height };
   }
 }
 
@@ -95,24 +106,33 @@ export function runPreflight(placement: PlacementDocument, _productProfile: Prod
   });
 
   let seamRiskCount = 0;
-  let wrapWidthMm = placement.wrap?.wrapWidthMm ?? placement.canvas.widthMm;
+  const wrap = (placement as PlacementDocument & {
+    wrap?: {
+      enabled?: boolean;
+      wrapWidthMm: number;
+      diameterMm: number;
+      seamXmm: number;
+      seamSafeMarginMm: number;
+    };
+  }).wrap;
+  let wrapWidthMm = wrap?.wrapWidthMm ?? placement.canvas.widthMm;
 
-  if (placement.wrap?.enabled) {
-    const expectedWrap = Math.PI * placement.wrap.diameterMm;
-    if (Math.abs(placement.wrap.wrapWidthMm - expectedWrap) > 0.15) {
+  if (wrap?.enabled) {
+    const expectedWrap = Math.PI * wrap.diameterMm;
+    if (Math.abs(wrap.wrapWidthMm - expectedWrap) > 0.15) {
       errors.push({
         code: "WRAP_WIDTH_MISMATCH",
-        message: `wrapWidthMm ${placement.wrap.wrapWidthMm} does not match π*diameter (${roundMm(expectedWrap)}).`
+        message: `wrapWidthMm ${wrap.wrapWidthMm} does not match π*diameter (${roundMm(expectedWrap)}).`
       });
     }
 
-    wrapWidthMm = placement.wrap.wrapWidthMm;
-    const seamLines = [placement.wrap.seamXmm, placement.wrap.seamXmm + placement.wrap.wrapWidthMm];
+    wrapWidthMm = wrap.wrapWidthMm;
+    const seamLines = [wrap.seamXmm, wrap.seamXmm + wrap.wrapWidthMm];
 
     placement.objects.forEach((object) => {
       const bounds = boundsForObject(object);
       const hit = seamLines.some((line) =>
-        intervalIntersects(bounds.minX, bounds.maxX, line - placement.wrap!.seamSafeMarginMm, line + placement.wrap!.seamSafeMarginMm)
+        intervalIntersects(bounds.minX, bounds.maxX, line - wrap.seamSafeMarginMm, line + wrap.seamSafeMarginMm)
       );
 
       if (hit) {

@@ -38,8 +38,8 @@ function parseSvgPaths(svg: string): Array<{ d: string; fill?: string; stroke?: 
   const paths = Array.from(doc.querySelectorAll("path"));
   return paths.map((p) => ({
     d: p.getAttribute("d") || "",
-    fill: p.getAttribute("fill"),
-    stroke: p.getAttribute("stroke")
+    fill: p.getAttribute("fill") ?? undefined,
+    stroke: p.getAttribute("stroke") ?? undefined
   }));
 }
 

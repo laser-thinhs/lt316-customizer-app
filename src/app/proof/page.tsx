@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { getTemplateById, templates } from "@/lib/templates";
 import { mmToPx, pxToMm } from "@/lib/units";
@@ -23,7 +23,7 @@ function defaultPlacement(templateId: string): ProofPlacement {
   };
 }
 
-export default function ProofPage() {
+function ProofPageClient() {
   const searchParams = useSearchParams();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [svgAssetId, setSvgAssetId] = useState<string>(searchParams.get("svgAssetId") ?? "");
@@ -334,5 +334,13 @@ export default function ProofPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function ProofPage() {
+  return (
+    <Suspense fallback={<main className="mx-auto max-w-7xl p-6 text-sm text-slate-600">Loading proof editor…</main>}>
+      <ProofPageClient />
+    </Suspense>
   );
 }
