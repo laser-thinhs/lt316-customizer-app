@@ -63,7 +63,7 @@ function intersects(a: ReturnType<typeof toAbsoluteBounds>, b: ReturnType<typeof
 }
 
 function orderObjects(objects: PlacementObject[]) {
-  return [...objects].sort((a, b) => (("zIndex" in a ? a.zIndex : 0) - ("zIndex" in b ? b.zIndex : 0)) || a.id.localeCompare(b.id));
+  return objects.filter((object) => object.visible !== false);
 }
 
 function transformForObject(object: PlacementObject, bounds: ReturnType<typeof toAbsoluteBounds>) {
@@ -226,10 +226,10 @@ export function buildExportManifest(
   preflight: PreflightResult
 ): ExportManifest {
   const placement = parsePlacementDocument(job.placementJson);
-  const ordered = orderObjects(placement.objects).map((object) => ({
+  const ordered = orderObjects(placement.objects).map((object, index) => ({
     id: object.id,
     kind: object.kind,
-    zIndex: "zIndex" in object ? object.zIndex : 0,
+    zIndex: "zIndex" in object ? object.zIndex : index,
     source: object.kind === "image"
       ? {
           anchor: "top-left",
