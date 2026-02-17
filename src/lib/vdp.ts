@@ -41,7 +41,7 @@ export function validateTokenValues(definitions: TokenDefinition[], resolved: Re
   return errors;
 }
 
-export function resolveTokensForObject(doc: any, values: Record<string, string | undefined>) {
+export function resolveTokensForObject(doc: unknown, values: Record<string, string | undefined>): unknown {
   if (!doc || typeof doc !== "object") return doc;
   if (Array.isArray(doc)) return doc.map((i) => resolveTokensForObject(i, values));
 

@@ -49,6 +49,8 @@ export function convertTextObjectToOutline(input: {
     boxHeightMm: source.boxHeightMm,
     mirrorX: source.mirrorX,
     mirrorY: source.mirrorY,
+    visible: true,
+    locked: false,
     zIndex: source.zIndex + 1
   };
 
