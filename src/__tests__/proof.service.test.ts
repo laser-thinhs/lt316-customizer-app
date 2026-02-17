@@ -34,7 +34,7 @@ describe("proof service", () => {
     const data = await proofService.renderProof({
       svgAssetId: "svg_1",
       templateId: "40oz_tumbler_wrap",
-      placement: {
+      placementMm: {
         scalePercent: 100,
         rotateDeg: 0,
         xMm: 140,
@@ -56,7 +56,7 @@ describe("proof service", () => {
       id: "job_1",
       sourceSvgAssetId: "svg_1",
       proofTemplateId: "40oz_tumbler_wrap",
-      proofPlacementJson: {
+      proofPlacementMmJson: {
         scalePercent: 100,
         rotateDeg: 0,
         xMm: 140,
@@ -88,9 +88,10 @@ describe("proof service", () => {
       });
     });
 
-    expect(listed).toContain("design.svg");
+    expect(listed).toContain("production.svg");
     expect(listed).toContain("proof.png");
-    expect(listed).toContain("job.json");
+    expect(listed).toContain("template.json");
+    expect(listed).toContain("placement.json");
     expect(listed).toContain("README.txt");
   });
 });

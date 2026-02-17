@@ -24,7 +24,7 @@ describe("proof routes", () => {
       body: JSON.stringify({
         svgAssetId: "svg_1",
         templateId: "40oz_tumbler_wrap",
-        placement: {
+        placementMm: {
           scalePercent: 100,
           rotateDeg: 0,
           xMm: 140,

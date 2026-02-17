@@ -8,12 +8,9 @@ import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/errors";
 import { createDefaultPlacementDocument } from "@/schemas/placement";
 import { createTracerAsset, readTracerAsset } from "@/lib/tracer-asset-store";
-import {
-  ProofPlacement,
-  ProofRenderRequest,
-  ProofTemplateId,
-  proofTemplatePresets
-} from "@/schemas/proof";
+import { defaultTemplateId, getTemplateById } from "@/lib/templates";
+import { mmToPx } from "@/lib/units";
+import { ProofPlacement, ProofRenderRequest, proofUiSettingsSchema } from "@/schemas/proof";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,23 +23,45 @@ function stripSvgWrapper(svg: string) {
     .trim();
 }
 
+function resolvePlacementMm(raw: unknown): ProofPlacement {
+  return (raw ? raw : {
+    scalePercent: 100,
+    rotateDeg: 0,
+    xMm: getTemplateById(defaultTemplateId).wrapWidthMm / 2,
+    yMm: getTemplateById(defaultTemplateId).wrapHeightMm / 2,
+    mirrorH: false,
+    mirrorV: false,
+    repeatMode: "none",
+    stepMm: 20
+  }) as ProofPlacement;
+}
+
 function buildPlacedArtworkSvg(input: {
   rawSvg: string;
-  placement: ProofPlacement;
-  templateId: ProofTemplateId;
-  outWidthPx: number;
+  placementMm: ProofPlacement;
+  templateId: string;
+  dpi: number;
+  outWidthPx?: number;
 }) {
-  const preset = proofTemplatePresets[input.templateId];
-  const outHeightPx = Math.round((preset.heightMm / preset.widthMm) * input.outWidthPx);
-  const pxPerMm = input.outWidthPx / preset.widthMm;
-  const xPx = input.placement.xMm * pxPerMm;
-  const yPx = input.placement.yMm * pxPerMm;
-  const sx = input.placement.scalePercent / 100 * (input.placement.mirrorH ? -1 : 1);
-  const sy = input.placement.scalePercent / 100 * (input.placement.mirrorV ? -1 : 1);
-  const tileStepPx = input.placement.stepMm * pxPerMm;
+  const template = getTemplateById(input.templateId);
+  const naturalWidthPx = mmToPx(template.wrapWidthMm, input.dpi);
+  const naturalHeightPx = mmToPx(template.wrapHeightMm, input.dpi);
 
+  const outWidthPx = input.outWidthPx ?? Math.round(naturalWidthPx);
+  const scaleForOutput = outWidthPx / naturalWidthPx;
+  const outHeightPx = Math.round(naturalHeightPx * scaleForOutput);
+
+  const xPx = mmToPx(input.placementMm.xMm, input.dpi) * scaleForOutput;
+  const yPx = mmToPx(input.placementMm.yMm, input.dpi) * scaleForOutput;
+  const sx = input.placementMm.scalePercent / 100 * (input.placementMm.mirrorH ? -1 : 1);
+  const sy = input.placementMm.scalePercent / 100 * (input.placementMm.mirrorV ? -1 : 1);
+  const tileStepPx = mmToPx(input.placementMm.stepMm, input.dpi) * scaleForOutput;
+
+  const safeMarginPx = mmToPx(template.safeMarginMm ?? 0, input.dpi) * scaleForOutput;
+  const bleedPx = mmToPx(template.bleedMm ?? 0, input.dpi) * scaleForOutput;
   const content = stripSvgWrapper(input.rawSvg);
-  const repeats = input.placement.repeatMode === "step-and-repeat"
+
+  const repeats = input.placementMm.repeatMode === "step-and-repeat"
     ? Array.from({ length: 7 }, (_, idx) => {
         const offset = (idx - 3) * tileStepPx;
         return `<g transform="translate(${offset} 0)">${content}</g>`;
@@ -51,15 +70,39 @@ function buildPlacedArtworkSvg(input: {
 
   return {
     outHeightPx,
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${input.outWidthPx}" height="${outHeightPx}" viewBox="0 0 ${input.outWidthPx} ${outHeightPx}">
-      <rect x="0" y="0" width="${input.outWidthPx}" height="${outHeightPx}" fill="#f8fafc"/>
-      <rect x="1" y="1" width="${input.outWidthPx - 2}" height="${outHeightPx - 2}" fill="none" stroke="#cbd5e1" stroke-width="2"/>
-      <rect x="${proofTemplatePresets[input.templateId].safeMarginMm * pxPerMm}" y="${proofTemplatePresets[input.templateId].safeMarginMm * pxPerMm}" width="${input.outWidthPx - proofTemplatePresets[input.templateId].safeMarginMm * pxPerMm * 2}" height="${outHeightPx - proofTemplatePresets[input.templateId].safeMarginMm * pxPerMm * 2}" fill="none" stroke="#a3a3a3" stroke-width="1" stroke-dasharray="8 8"/>
-      <g transform="translate(${xPx} ${yPx}) rotate(${input.placement.rotateDeg}) scale(${sx} ${sy})">
+    naturalWidthPx: Math.round(naturalWidthPx),
+    naturalHeightPx: Math.round(naturalHeightPx),
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${outWidthPx}" height="${outHeightPx}" viewBox="0 0 ${outWidthPx} ${outHeightPx}">
+      <rect x="0" y="0" width="${outWidthPx}" height="${outHeightPx}" fill="#f8fafc"/>
+      <rect x="1" y="1" width="${outWidthPx - 2}" height="${outHeightPx - 2}" fill="none" stroke="#cbd5e1" stroke-width="2"/>
+      <rect x="${safeMarginPx}" y="${safeMarginPx}" width="${Math.max(0, outWidthPx - safeMarginPx * 2)}" height="${Math.max(0, outHeightPx - safeMarginPx * 2)}" fill="none" stroke="#a3a3a3" stroke-width="1" stroke-dasharray="8 8"/>
+      <rect x="${bleedPx}" y="${bleedPx}" width="${Math.max(0, outWidthPx - bleedPx * 2)}" height="${Math.max(0, outHeightPx - bleedPx * 2)}" fill="none" stroke="#fb7185" stroke-width="1" stroke-dasharray="4 4"/>
+      <line x1="${outWidthPx / 2}" y1="0" x2="${outWidthPx / 2}" y2="${outHeightPx}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4 4"/>
+      <line x1="0" y1="${outHeightPx / 2}" x2="${outWidthPx}" y2="${outHeightPx / 2}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4 4"/>
+      <g transform="translate(${xPx} ${yPx}) rotate(${input.placementMm.rotateDeg}) scale(${sx} ${sy})">
         ${repeats}
       </g>
     </svg>`
   };
+}
+
+function buildProductionSvg(input: { rawSvg: string; templateId: string; placementMm: ProofPlacement; dpi: number }) {
+  const template = getTemplateById(input.templateId);
+  const widthPx = Math.round(mmToPx(template.wrapWidthMm, input.dpi));
+  const heightPx = Math.round(mmToPx(template.wrapHeightMm, input.dpi));
+  const xPx = mmToPx(input.placementMm.xMm, input.dpi);
+  const yPx = mmToPx(input.placementMm.yMm, input.dpi);
+  const sx = input.placementMm.scalePercent / 100 * (input.placementMm.mirrorH ? -1 : 1);
+  const sy = input.placementMm.scalePercent / 100 * (input.placementMm.mirrorV ? -1 : 1);
+  const content = stripSvgWrapper(input.rawSvg);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${template.wrapWidthMm}mm" height="${template.wrapHeightMm}mm" viewBox="0 0 ${widthPx} ${heightPx}">
+  <desc>template=${template.id};dpi=${input.dpi};units=mm-canonical;bleedMm=${template.bleedMm ?? 0};safeMarginMm=${template.safeMarginMm ?? 0}</desc>
+  <g transform="translate(${xPx} ${yPx}) rotate(${input.placementMm.rotateDeg}) scale(${sx} ${sy})">
+    ${content}
+  </g>
+</svg>`;
 }
 
 export async function createProofJobFromTracerSvg(sourceSvgAssetId: string) {
@@ -72,16 +115,8 @@ export async function createProofJobFromTracerSvg(sourceSvgAssetId: string) {
     throw new AppError("Product or machine profile is missing", 400, "MISSING_BASE_PROFILES");
   }
 
-  const placement = {
-    scalePercent: 100,
-    rotateDeg: 0,
-    xMm: proofTemplatePresets["40oz_tumbler_wrap"].widthMm / 2,
-    yMm: proofTemplatePresets["40oz_tumbler_wrap"].heightMm / 2,
-    mirrorH: false,
-    mirrorV: false,
-    repeatMode: "none" as const,
-    stepMm: 20
-  };
+  const template = getTemplateById(defaultTemplateId);
+  const placement = resolvePlacementMm(null);
 
   return prisma.designJob.create({
     data: {
@@ -89,8 +124,11 @@ export async function createProofJobFromTracerSvg(sourceSvgAssetId: string) {
       machineProfileId: machine.id,
       placementJson: createDefaultPlacementDocument(),
       sourceSvgAssetId,
-      proofTemplateId: "40oz_tumbler_wrap",
+      proofTemplateId: template.id,
+      proofDpi: template.defaultDpi,
       proofPlacementJson: placement,
+      proofPlacementMmJson: placement,
+      proofUiSettingsJson: proofUiSettingsSchema.parse({}),
       proofStatus: "draft"
     }
   });
@@ -99,13 +137,16 @@ export async function createProofJobFromTracerSvg(sourceSvgAssetId: string) {
 export async function renderProof(input: ProofRenderRequest) {
   const svgAsset = await readTracerAsset(input.svgAssetId);
   const rawSvg = svgAsset.buffer.toString("utf8");
-  const outWidthPx = input.highRes ? 4000 : 2000;
+  const template = getTemplateById(input.templateId);
+  const dpi = input.dpi ?? template.defaultDpi;
+  const previewWidth = input.highRes ? 4000 : 2000;
 
   const composed = buildPlacedArtworkSvg({
     rawSvg,
-    placement: input.placement,
-    templateId: input.templateId,
-    outWidthPx
+    placementMm: input.placementMm,
+    templateId: template.id,
+    dpi,
+    outWidthPx: previewWidth
   });
 
   const png = await sharp(Buffer.from(composed.svg, "utf8")).png().toBuffer();
@@ -118,22 +159,28 @@ export async function renderProof(input: ProofRenderRequest) {
   return {
     proofAssetId: proofAsset.id,
     proofUrl: proofAsset.url,
-    width: outWidthPx,
+    width: previewWidth,
     height: composed.outHeightPx,
+    dpi,
     png
   };
 }
 
 export async function renderProofForJob(jobId: string, highRes = false) {
   const job = await prisma.designJob.findUnique({ where: { id: jobId } });
-  if (!job || !job.sourceSvgAssetId || !job.proofTemplateId || !job.proofPlacementJson) {
+  if (!job || !job.sourceSvgAssetId) {
     throw new AppError("Proof job is missing placement data", 400, "INVALID_PROOF_JOB");
   }
 
+  const templateId = job.proofTemplateId ?? defaultTemplateId;
+  const dpi = job.proofDpi ?? getTemplateById(templateId).defaultDpi;
+  const placementMm = resolvePlacementMm(job.proofPlacementMmJson ?? job.proofPlacementJson);
+
   const result = await renderProof({
     svgAssetId: job.sourceSvgAssetId,
-    templateId: job.proofTemplateId as ProofTemplateId,
-    placement: job.proofPlacementJson as ProofPlacement,
+    templateId,
+    dpi,
+    placementMm,
     highRes
   });
 
@@ -143,22 +190,29 @@ export async function renderProofForJob(jobId: string, highRes = false) {
       proofPngAssetId: result.proofAssetId,
       proofStatus: "proofed",
       proofImagePath: result.proofUrl,
-      proofError: null
+      proofError: null,
+      proofDpi: dpi,
+      proofPlacementMmJson: placementMm,
+      proofPlacementJson: placementMm,
+      proofTemplateId: templateId
     }
   });
 
   return result;
 }
 
-export async function updateProofPlacement(jobId: string, placement: ProofPlacement, templateId: ProofTemplateId) {
+export async function updateProofPlacement(jobId: string, placementMm: ProofPlacement, templateId: string, dpi?: number, uiSettings?: unknown) {
   const job = await prisma.designJob.findUnique({ where: { id: jobId }, select: { id: true } });
   if (!job) throw new AppError("Design job not found", 404, "NOT_FOUND");
 
   return prisma.designJob.update({
     where: { id: jobId },
     data: {
-      proofPlacementJson: placement,
+      proofPlacementJson: placementMm,
+      proofPlacementMmJson: placementMm,
       proofTemplateId: templateId,
+      proofDpi: dpi,
+      proofUiSettingsJson: uiSettings ? proofUiSettingsSchema.parse(uiSettings) : undefined,
       proofStatus: "draft"
     }
   });
@@ -166,42 +220,34 @@ export async function updateProofPlacement(jobId: string, placement: ProofPlacem
 
 export async function exportProofPackage(jobId: string) {
   const job = await prisma.designJob.findUnique({ where: { id: jobId } });
-  if (!job || !job.sourceSvgAssetId || !job.proofTemplateId || !job.proofPlacementJson) {
+  if (!job || !job.sourceSvgAssetId) {
     throw new AppError("Proof job is missing placement data", 400, "INVALID_PROOF_JOB");
   }
 
-  const svgAsset = await readTracerAsset(job.sourceSvgAssetId);
-  const placement = job.proofPlacementJson as ProofPlacement;
-  const templateId = job.proofTemplateId as ProofTemplateId;
-  const preset = proofTemplatePresets[templateId];
+  const templateId = job.proofTemplateId ?? defaultTemplateId;
+  const template = getTemplateById(templateId);
+  const dpi = job.proofDpi ?? template.defaultDpi;
+  const placementMm = resolvePlacementMm(job.proofPlacementMmJson ?? job.proofPlacementJson);
 
+  const svgAsset = await readTracerAsset(job.sourceSvgAssetId);
+  const rawSvg = svgAsset.buffer.toString("utf8");
   const proof = await renderProofForJob(jobId, false);
-  const finalSvg = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${preset.widthMm}mm" height="${preset.heightMm}mm" viewBox="0 0 ${preset.widthMm} ${preset.heightMm}">\n<g transform="translate(${placement.xMm} ${placement.yMm}) rotate(${placement.rotateDeg}) scale(${(placement.scalePercent / 100) * (placement.mirrorH ? -1 : 1)} ${(placement.scalePercent / 100) * (placement.mirrorV ? -1 : 1)})">\n${stripSvgWrapper(svgAsset.buffer.toString("utf8"))}\n</g>\n</svg>`;
+  const productionSvg = buildProductionSvg({ rawSvg, templateId, placementMm, dpi });
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `proof-export-${jobId}-`));
   const zipPath = path.join(tempDir, "package.zip");
 
-  await fs.writeFile(path.join(tempDir, "design.svg"), finalSvg, "utf8");
+  await fs.writeFile(path.join(tempDir, "production.svg"), productionSvg, "utf8");
   await fs.writeFile(path.join(tempDir, "proof.png"), proof.png);
-  await fs.writeFile(
-    path.join(tempDir, "job.json"),
-    JSON.stringify({
-      jobId: job.id,
-      sourceSvgAssetId: job.sourceSvgAssetId,
-      templateId,
-      placement,
-      proofPngAssetId: proof.proofAssetId,
-      generatedAt: new Date().toISOString()
-    }, null, 2),
-    "utf8"
-  );
+  await fs.writeFile(path.join(tempDir, "template.json"), JSON.stringify(template, null, 2), "utf8");
+  await fs.writeFile(path.join(tempDir, "placement.json"), JSON.stringify(placementMm, null, 2), "utf8");
   await fs.writeFile(
     path.join(tempDir, "README.txt"),
-    `Production package for ${job.id}\nTemplate: ${preset.label}\nWrap size: ${preset.widthMm}mm x ${preset.heightMm}mm\nProof render width: ${proof.width}px\n`,
+    `Production package for ${job.id}\nTemplate: ${template.name}\nTemplate dimensions: ${template.wrapWidthMm}mm x ${template.wrapHeightMm}mm\nDPI: ${dpi}\nBleed: ${template.bleedMm ?? 0}mm\nSafe area margin: ${template.safeMarginMm ?? 0}mm\n`,
     "utf8"
   );
 
-  await execFileAsync("zip", ["-j", zipPath, "design.svg", "proof.png", "job.json", "README.txt"], { cwd: tempDir });
+  await execFileAsync("zip", ["-j", zipPath, "production.svg", "proof.png", "template.json", "placement.json", "README.txt"], { cwd: tempDir });
   const zipBuffer = await fs.readFile(zipPath);
   const zipAsset = await createTracerAsset({
     buffer: zipBuffer,
