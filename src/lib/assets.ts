@@ -3,8 +3,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { AppError } from "@/lib/errors";
 
-const ALLOWED_EXTENSIONS = new Set([".svg", ".png", ".jpg", ".jpeg", ".webp"]);
-const ALLOWED_MIME = new Set(["image/svg+xml", "image/png", "image/jpeg", "image/webp"]);
+const ALLOWED_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+const ALLOWED_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 export type UploadMime = "image/svg+xml" | "image/png" | "image/jpeg" | "image/webp";
 
@@ -18,7 +18,7 @@ export function storageRoot() {
 }
 
 export function maxAssetSizeBytes() {
-  return 15 * 1024 * 1024;
+  return 10 * 1024 * 1024;
 }
 
 export function sanitizeFilename(value: string): string {
@@ -31,7 +31,7 @@ export function assertSupportedUpload(fileName: string, mimeType: string) {
   const ext = path.extname(fileName).toLowerCase();
   if (!ALLOWED_EXTENSIONS.has(ext) || !ALLOWED_MIME.has(mimeType)) {
     throw new AppError(
-      "Unsupported file type. Allowed: png, jpg, jpeg, svg, webp.",
+      "Unsupported file type. Allowed: png, jpg, jpeg, webp.",
       400,
       "UNSUPPORTED_FILE_TYPE"
     );

@@ -1,4 +1,5 @@
-import { POST as uploadPost } from "@/app/api/assets/route";
+import { GET as listAssetsByJobId, POST as uploadPost } from "@/app/api/assets/route";
+import { DELETE as deleteAssetRoute, PATCH as patchAssetRoute } from "@/app/api/assets/[id]/route";
 import { GET as listAssets } from "@/app/api/design-jobs/[id]/assets/route";
 import { prisma } from "@/lib/prisma";
 
@@ -9,7 +10,10 @@ jest.mock("@/lib/prisma", () => ({
     },
     asset: {
       create: jest.fn(),
-      findMany: jest.fn()
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn()
     }
   }
 }));
@@ -50,6 +54,7 @@ describe("assets routes", () => {
 
     expect(res.status).toBe(201);
     expect(json.data.widthPx).toBe(120);
+    expect(json.data.filename).toBe("sample.png");
     expect(prisma.asset.create).toHaveBeenCalled();
   });
 
@@ -90,5 +95,49 @@ describe("assets routes", () => {
     expect(res.status).toBe(200);
     expect(json.data[0].id).toBe("a1");
     expect(prisma.asset.findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { createdAt: "asc" } }));
+  });
+
+  it("lists assets by job id with newest first", async () => {
+    (prisma.asset.findMany as jest.Mock).mockResolvedValue([]);
+    const res = await listAssetsByJobId(new Request("http://localhost/api/assets?jobId=job_1"));
+    expect(res.status).toBe(200);
+    expect(prisma.asset.findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { createdAt: "desc" } }));
+  });
+
+  it("renames an asset", async () => {
+    (prisma.asset.findUnique as jest.Mock).mockResolvedValue({ id: "asset-1" });
+    (prisma.asset.update as jest.Mock).mockResolvedValue({
+      id: "asset-1",
+      designJobId: "job_1",
+      kind: "original",
+      originalName: "renamed.png",
+      mimeType: "image/png",
+      byteSize: 100,
+      filePath: "asset-path",
+      widthPx: 20,
+      heightPx: 20,
+      createdAt: new Date("2026-01-01T00:00:00.000Z")
+    });
+
+    const res = await patchAssetRoute(new Request("http://localhost/api/assets/asset-1", {
+      method: "PATCH",
+      body: JSON.stringify({ filename: "renamed.png" })
+    }), { params: Promise.resolve({ id: "asset-1" }) });
+
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.data.filename).toBe("renamed.png");
+  });
+
+  it("deletes an asset", async () => {
+    (prisma.asset.findUnique as jest.Mock).mockResolvedValue({ id: "asset-1", filePath: "/tmp/a.png" });
+    (prisma.asset.delete as jest.Mock).mockResolvedValue({ id: "asset-1" });
+
+    const res = await deleteAssetRoute(new Request("http://localhost/api/assets/asset-1", { method: "DELETE" }), {
+      params: Promise.resolve({ id: "asset-1" })
+    });
+
+    expect(res.status).toBe(200);
+    expect(prisma.asset.delete).toHaveBeenCalled();
   });
 });

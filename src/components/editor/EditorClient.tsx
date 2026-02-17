@@ -8,7 +8,17 @@ import { circumferenceMm } from "@/lib/geometry/cylinder";
 
 const TumblerPreview3D = dynamic(() => import("./TumblerPreview3D"), { ssr: false });
 
-type AssetRef = { id: string; mimeType: string; kind: string };
+type AssetRef = {
+  id: string;
+  kind: string;
+  filename: string;
+  mime: string;
+  widthPx: number | null;
+  heightPx: number | null;
+  bytes: number | null;
+  createdAt: string;
+  url: string;
+};
 
 type Props = {
   jobId: string;
@@ -16,6 +26,8 @@ type Props = {
   profile: { diameterMm: number; engraveZoneHeightMm: number };
   assets: AssetRef[];
 };
+
+type Toast = { id: number; kind: "success" | "error"; message: string };
 
 function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   return (
@@ -26,16 +38,59 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
   );
 }
 
-export default function EditorClient({ jobId, initialPlacement, profile, assets }: Props) {
+function formatBytes(bytes: number | null) {
+  if (!bytes) return "Unknown size";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+async function uploadWithProgress(form: FormData, onProgress: (progress: number) => void): Promise<AssetRef> {
+  return await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/assets/upload");
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      onProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error("Upload failed"));
+        return;
+      }
+      const payload = JSON.parse(xhr.responseText) as { data: AssetRef };
+      resolve(payload.data);
+    };
+    xhr.onerror = () => reject(new Error("Network error"));
+    xhr.send(form);
+  });
+}
+
+export default function EditorClient({ jobId, initialPlacement, profile, assets: initialAssets }: Props) {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  const [activeAsset, setActiveAsset] = useState<AssetRef | null>(assets[0] ?? null);
-  const [previewSrc, setPreviewSrc] = useState<string | null>(assets[0] ? `/api/assets/${assets[0].id}` : null);
+  const [assets, setAssets] = useState<AssetRef[]>(initialAssets);
+  const [activeAsset, setActiveAsset] = useState<AssetRef | null>(initialAssets[0] ?? null);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(initialAssets[0]?.url ?? null);
   const [clampEnabled, setClampEnabled] = useState(true);
-  const autosaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [search, setSearch] = useState("");
+  const [imagesOnly, setImagesOnly] = useState(true);
+  const [sortBy, setSortBy] = useState<"recent" | "oldest" | "name">("recent");
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
+  const autosaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const store = usePlacementStore();
   const derived = useMemo(() => selectPlacementDerived(store), [store]);
+
+  const pushToast = (kind: Toast["kind"], message: string) => {
+    const next = { id: Date.now() + Math.random(), kind, message };
+    setToasts((current) => [...current, next]);
+    setTimeout(() => {
+      setToasts((current) => current.filter((item) => item.id !== next.id));
+    }, 2600);
+  };
 
   useEffect(() => {
     store.setProfile({
@@ -80,30 +135,91 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets 
     }
   };
 
-  const uploadAsset = async (file: File) => {
-    const objectUrl = URL.createObjectURL(file);
-    setPreviewSrc((previous) => {
-      if (previous?.startsWith("blob:")) URL.revokeObjectURL(previous);
-      return objectUrl;
-    });
-
-    const form = new FormData();
-    form.append("file", file);
-    form.append("designJobId", jobId);
-
-    const uploadRes = await fetch("/api/assets/upload", { method: "POST", body: form });
-    if (!uploadRes.ok) throw new Error("Upload failed");
-    const uploadJson = await uploadRes.json();
-    const id = uploadJson.data.id as string;
-
-    await fetch(`/api/assets/${id}/normalize`, { method: "POST" });
-    setActiveAsset({ id, mimeType: file.type, kind: "original" });
-    setPreviewSrc((previous) => {
-      if (previous?.startsWith("blob:")) URL.revokeObjectURL(previous);
-      return `/api/assets/${id}`;
-    });
-    store.setAsset(id);
+  const placeOnCanvas = (asset: AssetRef) => {
+    setActiveAsset(asset);
+    setPreviewSrc(asset.url);
+    store.setAsset(asset.id);
   };
+
+  const validateFile = (file: File) => {
+    const allowed = new Set(["image/png", "image/jpeg", "image/webp"]);
+    if (!allowed.has(file.type)) return "Please upload png, jpg, jpeg, or webp images.";
+    if (file.size > 10 * 1024 * 1024) return "File is larger than 10MB. Please use a smaller image.";
+    return null;
+  };
+
+  const uploadFiles = async (files: FileList | File[]) => {
+    for (const file of Array.from(files)) {
+      const validation = validateFile(file);
+      if (validation) {
+        pushToast("error", `${file.name}: ${validation}`);
+        continue;
+      }
+
+      const form = new FormData();
+      form.append("file", file);
+      form.append("designJobId", jobId);
+
+      try {
+        setUploadProgress(0);
+        const asset = await uploadWithProgress(form, setUploadProgress);
+        setAssets((current) => [asset, ...current]);
+        placeOnCanvas(asset);
+        pushToast("success", `${asset.filename} uploaded`);
+      } catch {
+        pushToast("error", `Failed to upload ${file.name}`);
+      } finally {
+        setUploadProgress(null);
+      }
+    }
+  };
+
+  const onRename = async (assetId: string, filename: string) => {
+    const res = await fetch(`/api/assets/${assetId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename })
+    });
+    if (!res.ok) {
+      pushToast("error", "Rename failed");
+      return;
+    }
+    const json = await res.json();
+    const updated = json.data as AssetRef;
+    setAssets((current) => current.map((asset) => asset.id === assetId ? updated : asset));
+    if (activeAsset?.id === assetId) setActiveAsset(updated);
+    pushToast("success", "Asset renamed");
+  };
+
+  const onDelete = async (assetId: string) => {
+    const res = await fetch(`/api/assets/${assetId}`, { method: "DELETE" });
+    if (!res.ok) {
+      pushToast("error", "Delete failed");
+      return;
+    }
+
+    const nextAssets = assets.filter((asset) => asset.id !== assetId);
+    setAssets(nextAssets);
+    if (activeAsset?.id === assetId) {
+      const next = nextAssets[0] ?? null;
+      setActiveAsset(next);
+      setPreviewSrc(next?.url ?? null);
+      store.setAsset(next?.id ?? null);
+    }
+    pushToast("success", "Asset deleted");
+  };
+
+  const filteredAssets = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    return assets
+      .filter((asset) => asset.filename.toLowerCase().includes(normalizedSearch))
+      .filter((asset) => imagesOnly ? asset.mime.startsWith("image/") : true)
+      .sort((a, b) => {
+        if (sortBy === "name") return a.filename.localeCompare(b.filename);
+        if (sortBy === "oldest") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+  }, [assets, imagesOnly, search, sortBy]);
 
   useEffect(() => {
     return () => {
@@ -115,16 +231,95 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets 
   const rect = clampEnabled ? derived.clampedRect : derived.resolvedRect;
 
   return (
-    <main className="grid grid-cols-1 gap-4 p-4 xl:grid-cols-[320px_1fr_360px]">
+    <main className="grid grid-cols-1 gap-4 p-4 xl:grid-cols-[420px_1fr_360px]">
       <section className="space-y-3 rounded border bg-white p-3">
-        <h2 className="font-semibold">Controls</h2>
-        <input type="file" accept=".svg,.png,.jpg,.jpeg,.webp" onChange={(e) => e.target.files?.[0] && void uploadAsset(e.target.files[0])} />
-        {previewSrc ? (
-          <div className="space-y-1 rounded border p-2">
-            <p className="text-xs font-medium text-slate-700">Artwork preview</p>
-            <img src={previewSrc} alt="Uploaded artwork preview" className="max-h-40 w-full rounded object-contain" />
+        <h2 className="font-semibold">Artwork Assets</h2>
+
+        <div
+          className="rounded border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-center"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            void uploadFiles(e.dataTransfer.files);
+          }}
+        >
+          <p className="text-sm text-slate-700">Drag and drop artwork images here</p>
+          <p className="mt-1 text-xs text-slate-500">PNG / JPG / JPEG / WEBP, up to 10MB each.</p>
+          <button className="mt-3 rounded bg-slate-900 px-3 py-1 text-xs text-white" onClick={() => fileInputRef.current?.click()}>Upload</button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            multiple
+            accept=".png,.jpg,.jpeg,.webp"
+            onChange={(e) => e.target.files && void uploadFiles(e.target.files)}
+          />
+          {uploadProgress !== null ? (
+            <div className="mt-3 h-2 overflow-hidden rounded bg-slate-200">
+              <div className="h-full bg-blue-500 transition-all" style={{ width: `${uploadProgress}%` }} />
+            </div>
+          ) : null}
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_180px]">
+          <div>
+            <div className="mb-2 flex items-center gap-2">
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search filename"
+                className="w-full rounded border px-2 py-1 text-xs"
+              />
+              <select className="rounded border px-2 py-1 text-xs" value={sortBy} onChange={(e) => setSortBy(e.target.value as "recent" | "oldest" | "name")}>
+                <option value="recent">Recent uploads</option>
+                <option value="oldest">Oldest</option>
+                <option value="name">Name</option>
+              </select>
+            </div>
+            <label className="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={imagesOnly} onChange={() => setImagesOnly((v) => !v)} /> Images only</label>
+            <div className="grid max-h-72 grid-cols-2 gap-2 overflow-auto pr-1">
+              {filteredAssets.map((asset) => (
+                <article key={asset.id} className="rounded border p-2 text-xs">
+                  <img src={asset.url} alt={asset.filename} className="mb-2 h-20 w-full rounded object-cover" />
+                  <input
+                    defaultValue={asset.filename}
+                    className="mb-1 w-full rounded border px-1 py-0.5"
+                    onBlur={(e) => e.target.value !== asset.filename && void onRename(asset.id, e.target.value)}
+                  />
+                  <p className="text-[11px] text-slate-600">{asset.widthPx ?? "?"}×{asset.heightPx ?? "?"} px · {formatBytes(asset.bytes)}</p>
+                  <div className="mt-2 grid grid-cols-2 gap-1">
+                    <button className="rounded border px-1 py-0.5" onClick={() => placeOnCanvas(asset)}>Add</button>
+                    <button
+                      className="rounded border px-1 py-0.5"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(`${window.location.origin}${asset.url}`);
+                        pushToast("success", "Asset URL copied");
+                      }}
+                    >
+                      Copy URL
+                    </button>
+                    <button className="col-span-2 rounded border border-red-200 px-1 py-0.5 text-red-600" onClick={() => void onDelete(asset.id)}>Delete</button>
+                  </div>
+                </article>
+              ))}
+            </div>
           </div>
-        ) : null}
+
+          <aside className="rounded border bg-slate-50 p-2 text-xs">
+            <p className="mb-1 font-medium">Selected preview</p>
+            {activeAsset ? (
+              <>
+                <img src={activeAsset.url} alt={activeAsset.filename} className="mb-2 h-28 w-full rounded object-contain" />
+                <p className="break-all font-medium">{activeAsset.filename}</p>
+                <p className="text-slate-600">{activeAsset.widthPx ?? "?"} × {activeAsset.heightPx ?? "?"} px</p>
+                <p className="text-slate-600">{formatBytes(activeAsset.bytes)}</p>
+                <p className="text-slate-600">{new Date(activeAsset.createdAt).toLocaleString()}</p>
+              </>
+            ) : <p className="text-slate-500">No asset selected.</p>}
+          </aside>
+        </div>
+
+        <h2 className="font-semibold">Controls</h2>
         <div className="grid grid-cols-2 gap-2">
           <NumberField label="Width (mm)" value={store.placement.widthMm} onChange={(value) => store.patchPlacement({ widthMm: value })} />
           <NumberField label="Height (mm)" value={store.placement.heightMm} onChange={(value) => store.patchPlacement({ heightMm: value })} />
@@ -189,6 +384,14 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets 
         />
         <p className="mt-2 text-xs text-slate-600">Asset: {activeAsset?.id ?? "none"}</p>
       </section>
+
+      <div className="pointer-events-none fixed right-3 top-3 z-50 space-y-2">
+        {toasts.map((toast) => (
+          <div key={toast.id} className={`rounded px-3 py-2 text-xs text-white shadow ${toast.kind === "success" ? "bg-emerald-600" : "bg-rose-600"}`}>
+            {toast.message}
+          </div>
+        ))}
+      </div>
     </main>
   );
 }
