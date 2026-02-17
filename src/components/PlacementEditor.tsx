@@ -14,6 +14,7 @@ import type { ExportPayload, PreflightResult } from "@/schemas/preflight-export"
 import { buildDefaultImagePlacement } from "@/lib/placement/image-insertion";
 import { useAutosavePlacement } from "@/hooks/useAutosavePlacement";
 import { arePlacementsEqual } from "@/lib/placement/stableCompare";
+import WrapCanvas, { WrapCanvasObject } from "@/components/editor/WrapCanvas";
 
 type Props = {
   designJobId: string;
@@ -109,6 +110,12 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const [batchIds, setBatchIds] = useState("");
   const [isRunningPreflight, setRunningPreflight] = useState(false);
   const [isExporting, setExporting] = useState(false);
+  const [canvasDpi, setCanvasDpi] = useState(96);
+  const [gridEnabled, setGridEnabled] = useState(true);
+  const [gridSpacingMm, setGridSpacingMm] = useState<5 | 10>(5);
+  const [showCenterlines, setShowCenterlines] = useState(true);
+  const [showSafeMargin, setShowSafeMargin] = useState(true);
+  const [keepAspectResize, setKeepAspectResize] = useState(true);
 
   const selected = useMemo(
     () => doc.objects.find((entry) => entry.id === selectedObjectId) ?? null,
@@ -132,6 +139,35 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
       info: issues.filter((issue) => issue.severity === "info")
     };
   }, [preflight]);
+
+  const canvasObjects = useMemo<WrapCanvasObject[]>(() => {
+    return doc.objects.map((entry) => {
+      if (entry.kind === "image") {
+        return {
+          id: entry.id,
+          kind: entry.kind,
+          xMm: entry.xMm,
+          yMm: entry.yMm,
+          widthMm: entry.widthMm,
+          heightMm: entry.heightMm,
+          rotationDeg: entry.rotationDeg,
+          assetHref: `/api/assets/${entry.assetId}`,
+          label: "image"
+        };
+      }
+
+      return {
+        id: entry.id,
+        kind: entry.kind,
+        xMm: entry.offsetXMm,
+        yMm: entry.offsetYMm,
+        widthMm: entry.boxWidthMm,
+        heightMm: entry.boxHeightMm,
+        rotationDeg: entry.rotationDeg,
+        label: entry.kind
+      };
+    });
+  }, [doc.objects]);
 
   const commitDoc = (next: PlacementDocument) => {
     setUndoStack((prev) => [...prev.slice(-29), doc]);
@@ -211,6 +247,32 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     }
 
     commitDoc({ ...doc, objects: doc.objects.map((entry) => (entry.id === selected.id ? next : entry)) });
+  };
+
+  const updateObjectTransform = (id: string, patch: { xMm: number; yMm: number; widthMm: number; heightMm: number }) => {
+    commitDoc({
+      ...doc,
+      objects: doc.objects.map((entry) => {
+        if (entry.id !== id) return entry;
+        if (entry.kind === "image") {
+          return {
+            ...entry,
+            xMm: roundToHundredth(patch.xMm),
+            yMm: roundToHundredth(patch.yMm),
+            widthMm: Math.max(0.01, roundToHundredth(patch.widthMm)),
+            heightMm: Math.max(0.01, roundToHundredth(patch.heightMm))
+          };
+        }
+
+        return {
+          ...entry,
+          offsetXMm: roundToHundredth(patch.xMm),
+          offsetYMm: roundToHundredth(patch.yMm),
+          boxWidthMm: Math.max(0.01, roundToHundredth(patch.widthMm)),
+          boxHeightMm: Math.max(0.01, roundToHundredth(patch.heightMm))
+        };
+      })
+    });
   };
 
   const onUploadArtwork = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -360,6 +422,41 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
       </section>
 
       <label className="block text-sm"><span>Selected Object</span><select value={selectedObjectId ?? ""} onChange={(event) => setSelectedObjectId(event.target.value || null)} className="w-full rounded border px-2 py-1"><option value="">None</option>{doc.objects.map((entry) => (<option key={entry.id} value={entry.id}>{entry.kind}:{entry.id.slice(0, 8)}</option>))}</select></label>
+
+      <section className="space-y-3 rounded border border-slate-200 bg-slate-50 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">Canvas Preview</h3>
+          <label className="text-xs">DPI
+            <input type="number" min={72} step={1} value={canvasDpi} onChange={(event) => setCanvasDpi(Math.max(72, Number(event.target.value) || 96))} className="ml-2 w-20 rounded border px-2 py-1" />
+          </label>
+        </div>
+        <div className="flex flex-wrap gap-3 text-xs">
+          <label className="flex items-center gap-1"><input type="checkbox" checked={gridEnabled} onChange={(event) => setGridEnabled(event.target.checked)} /> Grid</label>
+          <label className="flex items-center gap-1">Spacing
+            <select value={gridSpacingMm} onChange={(event) => setGridSpacingMm(Number(event.target.value) === 10 ? 10 : 5)} className="rounded border px-1 py-0.5">
+              <option value={5}>5mm</option>
+              <option value={10}>10mm</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1"><input type="checkbox" checked={showCenterlines} onChange={(event) => setShowCenterlines(event.target.checked)} /> Centerlines</label>
+          <label className="flex items-center gap-1"><input type="checkbox" checked={showSafeMargin} onChange={(event) => setShowSafeMargin(event.target.checked)} /> Safe margin</label>
+          <label className="flex items-center gap-1"><input type="checkbox" checked={keepAspectResize} onChange={(event) => setKeepAspectResize(event.target.checked)} /> Keep aspect resize</label>
+        </div>
+        <WrapCanvas
+          template={{ widthMm: doc.canvas.widthMm, heightMm: doc.canvas.heightMm, safeMarginMm: 2 }}
+          objects={canvasObjects}
+          selectedId={selectedObjectId}
+          dpi={canvasDpi}
+          gridEnabled={gridEnabled}
+          gridSpacingMm={gridSpacingMm}
+          showCenterlines={showCenterlines}
+          showSafeMargin={showSafeMargin}
+          keepAspectRatio={keepAspectResize}
+          onSelect={setSelectedObjectId}
+          onUpdateTransform={updateObjectTransform}
+        />
+        <p className="text-xs text-slate-600">Drag to move. Shift-drag locks axis. Arrow keys nudge 1mm (Shift = 5mm).</p>
+      </section>
 
       {isImageObject(selected) ? (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
