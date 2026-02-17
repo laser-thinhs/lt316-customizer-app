@@ -10,7 +10,7 @@ import {
   placementDocumentSchema
 } from "@/schemas/placement";
 import { clampTextPlacementToZone, validateTextPlacement } from "@/lib/geometry/textLayout";
-import type { ExportPayload, PreflightResult } from "@/schemas/preflight-export";
+import type { JobAssetExportResponse, PreflightResult } from "@/schemas/preflight-export";
 import { buildDefaultImagePlacement } from "@/lib/placement/image-insertion";
 import { useAutosavePlacement } from "@/hooks/useAutosavePlacement";
 import { arePlacementsEqual } from "@/lib/placement/stableCompare";
@@ -128,7 +128,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const [undoStack, setUndoStack] = useState<PlacementDocument[]>([]);
   const [redoStack, setRedoStack] = useState<PlacementDocument[]>([]);
   const [preflight, setPreflight] = useState<PreflightResult | null>(null);
-  const [exportPayload, setExportPayload] = useState<ExportPayload | null>(null);
+  const [exportResult, setExportResult] = useState<JobAssetExportResponse | null>(null);
   const [batchIds, setBatchIds] = useState("");
   const [isRunningPreflight, setRunningPreflight] = useState(false);
   const [isExporting, setExporting] = useState(false);
@@ -145,6 +145,15 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const [showCenterlines, setShowCenterlines] = useState(true);
   const [showSafeMargin, setShowSafeMargin] = useState(true);
   const [keepAspectResize, setKeepAspectResize] = useState(true);
+
+  const copyText = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setStatusMessage(`${label} copied to clipboard.`);
+    } catch {
+      setStatusMessage(`Unable to copy ${label.toLowerCase()}.`);
+    }
+  };
 
   const selected = useMemo(
     () => doc.objects.find((entry) => entry.id === selectedObjectId) ?? null,
@@ -453,6 +462,19 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     setSelectedObjectId(remaining[0]?.id ?? null);
   };
 
+  const exportJob = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/jobs/${designJobId}/export`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error?.message || "Export failed");
+      setExportResult(json.data as JobAssetExportResponse);
+      setStatusMessage("Export package generated and ready to download.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Unknown export error");
+    } finally {
+      setExporting(false);
+    }
   const onLayerDragStart = (event: DragEvent<HTMLDivElement>, id: string) => {
     event.dataTransfer.effectAllowed = "move";
     setDraggingLayerId(id);
@@ -654,6 +676,63 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
             {preflight?.status ?? "not-run"}
           </span>
         </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="rounded border px-2 py-1 text-xs" onClick={() => void runPreflight()} disabled={isRunningPreflight}>{isRunningPreflight ? "Running..." : "Run Preflight"}</button>
+          <button className="rounded bg-slate-900 px-2 py-1 text-xs text-white" onClick={() => void exportJob()} disabled={isExporting}>{isExporting ? "Exporting..." : "Export Job"}</button>
+          <a
+            className={`rounded border px-2 py-1 text-xs ${exportResult?.svgUrl ? "" : "pointer-events-none opacity-40"}`}
+            href={exportResult?.svgUrl ?? "#"}
+            download={`job-${designJobId}.svg`}
+          >
+            Download SVG
+          </a>
+          <a
+            className={`rounded border px-2 py-1 text-xs ${exportResult?.manifestUrl ? "" : "pointer-events-none opacity-40"}`}
+            href={exportResult?.manifestUrl ?? "#"}
+            download={`job-${designJobId}-manifest.json`}
+          >
+            Download Manifest JSON
+          </a>
+        </div>
+        <label className="block text-xs">
+          Batch Job IDs (comma separated)
+          <input value={batchIds} onChange={(event) => setBatchIds(event.target.value)} placeholder="job_a,job_b" className="mt-1 w-full rounded border px-2 py-1" />
+        </label>
+        <button className="rounded border px-2 py-1 text-xs" onClick={() => void exportBatch()} disabled={isExporting}>Export Selected Jobs</button>
+        <div className="rounded border bg-white p-2 text-xs">
+          <p className="font-medium">Preflight Summary</p>
+          <p className="mt-1 text-slate-700">{groupedIssues.error.length} errors · {groupedIssues.warning.length} warnings · {groupedIssues.info.length} info</p>
+          {(groupedIssues.error.length + groupedIssues.warning.length + groupedIssues.info.length) > 0 ? (
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-slate-700">
+              {[...groupedIssues.error, ...groupedIssues.warning, ...groupedIssues.info].map((issue) => (
+                <li key={`${issue.code}-${issue.objectId ?? issue.message}`}>{issue.message}{issue.objectId ? ` (${issue.objectId})` : ""}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-slate-500">Run preflight to see validation messages.</p>
+          )}
+        </div>
+        {exportResult ? (
+          <div className="space-y-2 rounded border bg-white p-2 text-xs">
+            <p><strong>Last export:</strong> {new Date(exportResult.exportedAt).toLocaleString()}</p>
+            <p><strong>SVG size:</strong> {(exportResult.svgByteSize / 1024).toFixed(2)} KB · <strong>Manifest size:</strong> {(exportResult.manifestByteSize / 1024).toFixed(2)} KB</p>
+            {exportResult.warnings.length > 0 ? <ul className="list-disc pl-4 text-amber-700">{exportResult.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+            {exportResult.errors.length > 0 ? <ul className="list-disc pl-4 text-red-700">{exportResult.errors.map((error) => <li key={error}>{error}</li>)}</ul> : null}
+            <details>
+              <summary className="cursor-pointer font-medium">Advanced</summary>
+              <div className="mt-2 space-y-2">
+                <label className="block text-xs">Manifest JSON<textarea readOnly value={exportResult.manifest} className="mt-1 h-28 w-full rounded border px-2 py-1 font-mono" /></label>
+                <label className="block text-xs">SVG<textarea readOnly value={exportResult.svg} className="mt-1 h-24 w-full rounded border px-2 py-1 font-mono" /></label>
+                <div className="flex gap-2">
+                  <button className="rounded border px-2 py-1 text-xs" onClick={() => void copyText(exportResult.manifest, "Manifest JSON")}>Copy Manifest</button>
+                  <button className="rounded border px-2 py-1 text-xs" onClick={() => void copyText(exportResult.svg, "SVG")}>Copy SVG</button>
+                </div>
+              </div>
+            </details>
+          </div>
+        ) : null}
+      </section>
+      <pre className="max-h-72 overflow-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(doc ?? createDefaultPlacementDocument(), null, 2)}</pre>
 
         <InspectorPanel
           doc={doc}

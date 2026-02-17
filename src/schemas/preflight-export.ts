@@ -111,8 +111,21 @@ export const batchExportResponseSchema = z.object({
   results: z.array(batchExportResultSchema)
 });
 
+export const jobAssetExportResponseSchema = z.object({
+  svgUrl: z.string(),
+  manifestUrl: z.string(),
+  warnings: z.array(z.string()),
+  errors: z.array(z.string()),
+  exportedAt: z.string(),
+  svgByteSize: z.number().int().nonnegative(),
+  manifestByteSize: z.number().int().nonnegative(),
+  svg: z.string(),
+  manifest: z.string()
+});
+
 export type PreflightResult = z.infer<typeof preflightResultSchema>;
 export type PreflightIssue = z.infer<typeof preflightIssueSchema>;
 export type ExportManifest = z.infer<typeof exportManifestSchema>;
 export type SvgStats = z.infer<typeof svgStatsSchema>;
 export type ExportPayload = z.infer<typeof exportPayloadSchema>;
+export type JobAssetExportResponse = z.infer<typeof jobAssetExportResponseSchema>;
