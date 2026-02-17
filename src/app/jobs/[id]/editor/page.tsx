@@ -20,7 +20,17 @@ export default async function JobEditorPage({ params }: { params: Promise<{ id: 
         diameterMm: Number(job.productProfile.diameterMm),
         engraveZoneHeightMm: Number(job.productProfile.engraveZoneHeightMm)
       }}
-      assets={job.assets.map((asset) => ({ id: asset.id, mimeType: asset.mimeType, kind: asset.kind }))}
+      assets={job.assets.map((asset) => ({
+        id: asset.id,
+        kind: asset.kind,
+        filename: asset.originalName ?? `${asset.id}.bin`,
+        mime: asset.mimeType,
+        widthPx: asset.widthPx,
+        heightPx: asset.heightPx,
+        bytes: asset.byteSize,
+        createdAt: asset.createdAt.toISOString(),
+        url: `/api/assets/${asset.id}`
+      }))}
     />
   );
 }
