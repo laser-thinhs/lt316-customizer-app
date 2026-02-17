@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ImagePlacementObject,
   PlacementDocument,
@@ -73,6 +73,8 @@ function createTextObject(kind: TextObject["kind"]): TextObject {
     allCaps: false,
     mirrorX: false,
     mirrorY: false,
+    visible: true,
+    locked: false,
     zIndex: 10
   };
 
@@ -96,6 +98,20 @@ function createTextObject(kind: TextObject["kind"]): TextObject {
 
 const roundToHundredth = (value: number) => Math.round(value * 100) / 100;
 
+function normalizeObjectOrder(objects: PlacementObject[]): PlacementObject[] {
+  return objects.map((object, index) => ({ ...object, zIndex: index }));
+}
+
+function objectIcon(kind: PlacementObject["kind"]) {
+  if (kind === "image") return "🖼️";
+  if (kind === "vector") return "⬡";
+  return "T";
+}
+
+function defaultLayerName(object: PlacementObject, index: number) {
+  return object.layerName ?? `${object.kind.replace("_", " ")} ${index + 1}`;
+}
+
 export default function PlacementEditor({ designJobId, placement, onUpdated }: Props) {
   const [doc, setDoc] = useState<PlacementDocument>(placementDocumentSchema.parse(placement));
   const [assets, setAssets] = useState<ApiAsset[]>([]);
@@ -109,6 +125,8 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const [batchIds, setBatchIds] = useState("");
   const [isRunningPreflight, setRunningPreflight] = useState(false);
   const [isExporting, setExporting] = useState(false);
+  const [isAssetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [draggingLayerId, setDraggingLayerId] = useState<string | null>(null);
 
   const selected = useMemo(
     () => doc.objects.find((entry) => entry.id === selectedObjectId) ?? null,
@@ -136,7 +154,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const commitDoc = (next: PlacementDocument) => {
     setUndoStack((prev) => [...prev.slice(-29), doc]);
     setRedoStack([]);
-    setDoc(next);
+    setDoc({ ...next, objects: normalizeObjectOrder(next.objects) });
   };
 
   const refreshAssets = async () => {
@@ -181,19 +199,23 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
 
   const addText = (kind: TextObject["kind"]) => {
     const obj = createTextObject(kind);
-    const clamped = clampTextPlacementToZone(obj, doc.canvas);
+    const clamped = clampTextPlacementToZone({
+      ...obj,
+      layerName: `${kind.replace("_", " ")} ${doc.objects.length + 1}`,
+      zIndex: doc.objects.length
+    }, doc.canvas);
     commitDoc({ ...doc, objects: [...doc.objects, clamped] });
     setSelectedObjectId(clamped.id);
   };
 
   const updateSelectedText = (updater: (object: TextObject) => TextObject) => {
-    if (!isTextObject(selected)) return;
+    if (!isTextObject(selected) || selected.locked) return;
     const next = updater(selected);
     commitDoc({ ...doc, objects: doc.objects.map((entry) => (entry.id === selected.id ? next : entry)) });
   };
 
   const updateSelectedImage = (patch: Partial<ImagePlacementObject>) => {
-    if (!isImageObject(selected)) return;
+    if (!isImageObject(selected) || selected.locked) return;
     const next: ImagePlacementObject = {
       ...selected,
       ...patch,
@@ -235,18 +257,68 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
 
   const onAddAssetToCanvas = (asset: ApiAsset) => {
     try {
-      const imageObj = buildDefaultImagePlacement({
-        assetId: asset.id,
-        widthPx: asset.widthPx,
-        heightPx: asset.heightPx,
-        canvas: doc.canvas
-      });
+      const imageObj: ImagePlacementObject = {
+        ...buildDefaultImagePlacement({
+          assetId: asset.id,
+          widthPx: asset.widthPx,
+          heightPx: asset.heightPx,
+          canvas: doc.canvas
+        }),
+        visible: true,
+        locked: false,
+        zIndex: doc.objects.length,
+        layerName: asset.originalName ?? undefined
+      };
       commitDoc({ ...doc, objects: [...doc.objects, imageObj] });
       setSelectedObjectId(imageObj.id);
       setStatusMessage(`Added ${asset.originalName ?? asset.id} to canvas`);
+      setAssetPickerOpen(false);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not add image");
     }
+  };
+
+  const patchLayer = (id: string, patch: Partial<PlacementObject>) => {
+    commitDoc({
+      ...doc,
+      objects: doc.objects.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry))
+    });
+  };
+
+  const duplicateSelectedLayer = () => {
+    if (!selected) return;
+    const copy = {
+      ...selected,
+      id: `${selected.kind}-${randomId()}`,
+      layerName: `${selected.layerName ?? selected.kind} copy`,
+      zIndex: doc.objects.length
+    };
+    commitDoc({ ...doc, objects: [...doc.objects, copy] });
+    setSelectedObjectId(copy.id);
+  };
+
+  const deleteSelectedLayer = () => {
+    if (!selected) return;
+    const remaining = doc.objects.filter((entry) => entry.id !== selected.id);
+    commitDoc({ ...doc, objects: remaining });
+    setSelectedObjectId(remaining[0]?.id ?? null);
+  };
+
+  const onLayerDragStart = (event: DragEvent<HTMLDivElement>, id: string) => {
+    event.dataTransfer.effectAllowed = "move";
+    setDraggingLayerId(id);
+  };
+
+  const onLayerDrop = (targetId: string) => {
+    if (!draggingLayerId || draggingLayerId === targetId) return;
+    const sourceIndex = doc.objects.findIndex((entry) => entry.id === draggingLayerId);
+    const targetIndex = doc.objects.findIndex((entry) => entry.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const reordered = [...doc.objects];
+    const [moved] = reordered.splice(sourceIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+    commitDoc({ ...doc, objects: reordered });
+    setDraggingLayerId(null);
   };
 
   const onConvertToOutline = async () => {
@@ -339,27 +411,65 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
         }}>Redo</button>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        <button className="rounded border px-2 py-1 text-sm" onClick={() => setAssetPickerOpen((open) => !open)}>Add Image from Assets</button>
+        <button className="rounded border px-2 py-1 text-sm disabled:opacity-50" disabled={!selected} onClick={duplicateSelectedLayer}>Duplicate Layer</button>
+        <button className="rounded border px-2 py-1 text-sm disabled:opacity-50" disabled={!selected} onClick={deleteSelectedLayer}>Delete Layer</button>
+      </div>
+
       <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
-        <h3 className="text-sm font-semibold">Artwork Assets</h3>
-        <label className="block text-sm">
-          <span>Upload Artwork</span>
-          <input type="file" accept=".svg,.png,.jpg,.jpeg,.webp" className="mt-1 block w-full text-xs" onChange={onUploadArtwork} />
-        </label>
-        <div className="max-h-44 space-y-2 overflow-auto">
-          {assets.map((asset) => (
-            <div key={asset.id} className="flex items-center justify-between gap-2 rounded border bg-white p-2 text-xs">
-              <div>
-                <p className="font-medium">{asset.originalName ?? asset.id}</p>
-                <p className="text-slate-600">{asset.widthPx ?? "?"}×{asset.heightPx ?? "?"} px</p>
-              </div>
-              <button className="rounded border px-2 py-1" onClick={() => onAddAssetToCanvas(asset)}>Add to Canvas</button>
+        <h3 className="text-sm font-semibold">Layers</h3>
+        <div className="max-h-52 space-y-1 overflow-auto">
+          {doc.objects.map((entry, index) => (
+            <div
+              key={entry.id}
+              draggable
+              onDragStart={(event) => onLayerDragStart(event, entry.id)}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => onLayerDrop(entry.id)}
+              className={`grid grid-cols-[auto_1fr_auto_auto] items-center gap-2 rounded border bg-white px-2 py-1 text-xs ${selectedObjectId === entry.id ? "border-blue-500" : "border-slate-200"}`}
+            >
+              <button className="w-6" onClick={() => setSelectedObjectId(entry.id)}>{objectIcon(entry.kind)}</button>
+              <input
+                value={defaultLayerName(entry, index)}
+                onChange={(event) => patchLayer(entry.id, { layerName: event.target.value })}
+                onFocus={() => setSelectedObjectId(entry.id)}
+                className="rounded border px-1 py-0.5"
+              />
+              <button className="rounded border px-1" onClick={() => patchLayer(entry.id, { visible: !(entry.visible ?? true) })}>{entry.visible === false ? "🙈" : "👁"}</button>
+              <button className="rounded border px-1" onClick={() => patchLayer(entry.id, { locked: !(entry.locked ?? false) })}>{entry.locked ? "🔒" : "🔓"}</button>
             </div>
           ))}
-          {assets.length === 0 ? <p className="text-xs text-slate-600">No artwork uploaded for this job yet.</p> : null}
+          {doc.objects.length === 0 ? <p className="text-xs text-slate-600">No layers yet.</p> : null}
         </div>
       </section>
 
-      <label className="block text-sm"><span>Selected Object</span><select value={selectedObjectId ?? ""} onChange={(event) => setSelectedObjectId(event.target.value || null)} className="w-full rounded border px-2 py-1"><option value="">None</option>{doc.objects.map((entry) => (<option key={entry.id} value={entry.id}>{entry.kind}:{entry.id.slice(0, 8)}</option>))}</select></label>
+      {isAssetPickerOpen ? (
+        <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
+          <h3 className="text-sm font-semibold">Artwork Assets</h3>
+          <label className="block text-sm">
+            <span>Upload Artwork</span>
+            <input type="file" accept=".svg,.png,.jpg,.jpeg,.webp" className="mt-1 block w-full text-xs" onChange={onUploadArtwork} />
+          </label>
+          <div className="max-h-44 space-y-2 overflow-auto">
+            {assets.map((asset) => (
+              <div key={asset.id} className="flex items-center justify-between gap-2 rounded border bg-white p-2 text-xs">
+                <div>
+                  <p className="font-medium">{asset.originalName ?? asset.id}</p>
+                  <p className="text-slate-600">{asset.widthPx ?? "?"}×{asset.heightPx ?? "?"} px</p>
+                </div>
+                <button className="rounded border px-2 py-1" onClick={() => onAddAssetToCanvas(asset)}>Add to Canvas</button>
+              </div>
+            ))}
+            {assets.length === 0 ? <p className="text-xs text-slate-600">No artwork uploaded for this job yet.</p> : null}
+          </div>
+        </section>
+      ) : null}
+
+      <label className="block text-sm"><span>Selected Object</span><select value={selectedObjectId ?? ""} onChange={(event) => setSelectedObjectId(event.target.value || null)} className="w-full rounded border px-2 py-1"><option value="">None</option>{doc.objects.map((entry, index) => (<option key={entry.id} value={entry.id}>{defaultLayerName(entry, index)}</option>))}</select></label>
+
+      {isImageObject(selected) && selected.locked ? <p className="text-xs text-amber-700">Selected layer is locked.</p> : null}
+      {isTextObject(selected) && selected.locked ? <p className="text-xs text-amber-700">Selected layer is locked.</p> : null}
 
       {isImageObject(selected) ? (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
