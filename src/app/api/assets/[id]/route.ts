@@ -1,7 +1,13 @@
 import { promises as fs } from "node:fs";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { fail } from "@/lib/response";
+import { fail, ok } from "@/lib/response";
 import { AppError } from "@/lib/errors";
+import { deleteAsset, renameAsset } from "@/services/asset.service";
+
+const renameSchema = z.object({
+  filename: z.string().min(1)
+});
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -17,6 +23,27 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         "Cache-Control": "no-store"
       }
     });
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const parsed = renameSchema.parse(await request.json());
+    const asset = await renameAsset(id, parsed.filename);
+    return ok(asset);
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    await deleteAsset(id);
+    return ok({ deleted: true });
   } catch (error) {
     return fail(error);
   }
