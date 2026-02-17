@@ -30,6 +30,7 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets 
   const [warnings, setWarnings] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [activeAsset, setActiveAsset] = useState<AssetRef | null>(assets[0] ?? null);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(assets[0] ? `/api/assets/${assets[0].id}` : null);
   const [clampEnabled, setClampEnabled] = useState(true);
   const autosaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -80,6 +81,12 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets 
   };
 
   const uploadAsset = async (file: File) => {
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewSrc((previous) => {
+      if (previous?.startsWith("blob:")) URL.revokeObjectURL(previous);
+      return objectUrl;
+    });
+
     const form = new FormData();
     form.append("file", file);
     form.append("designJobId", jobId);
@@ -91,8 +98,18 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets 
 
     await fetch(`/api/assets/${id}/normalize`, { method: "POST" });
     setActiveAsset({ id, mimeType: file.type, kind: "original" });
+    setPreviewSrc((previous) => {
+      if (previous?.startsWith("blob:")) URL.revokeObjectURL(previous);
+      return `/api/assets/${id}`;
+    });
     store.setAsset(id);
   };
+
+  useEffect(() => {
+    return () => {
+      if (previewSrc?.startsWith("blob:")) URL.revokeObjectURL(previewSrc);
+    };
+  }, [previewSrc]);
 
   const mmScale = 3;
   const rect = clampEnabled ? derived.clampedRect : derived.resolvedRect;
@@ -102,6 +119,12 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets 
       <section className="space-y-3 rounded border bg-white p-3">
         <h2 className="font-semibold">Controls</h2>
         <input type="file" accept=".svg,.png,.jpg,.jpeg,.webp" onChange={(e) => e.target.files?.[0] && void uploadAsset(e.target.files[0])} />
+        {previewSrc ? (
+          <div className="space-y-1 rounded border p-2">
+            <p className="text-xs font-medium text-slate-700">Artwork preview</p>
+            <img src={previewSrc} alt="Uploaded artwork preview" className="max-h-40 w-full rounded object-contain" />
+          </div>
+        ) : null}
         <div className="grid grid-cols-2 gap-2">
           <NumberField label="Width (mm)" value={store.placement.widthMm} onChange={(value) => store.patchPlacement({ widthMm: value })} />
           <NumberField label="Height (mm)" value={store.placement.heightMm} onChange={(value) => store.patchPlacement({ heightMm: value })} />
