@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type TracerSettings = {
   mode: "auto" | "bw" | "color";
@@ -54,11 +55,13 @@ const PRESETS: Record<string, Partial<TracerSettings>> = {
 };
 
 export default function TracerPage() {
+  const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [settings, setSettings] = useState<TracerSettings>(DEFAULT_SETTINGS);
   const [status, setStatus] = useState<"idle" | "uploading" | "tracing" | "done" | "failed">("idle");
   const [svg, setSvg] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [outputSvgAssetId, setOutputSvgAssetId] = useState<string | null>(null);
 
   useEffect(() => {
     const raw = localStorage.getItem("tracer:last-settings");
@@ -107,7 +110,23 @@ export default function TracerPage() {
     }
 
     setSvg(payload.result.svg);
+    setOutputSvgAssetId(payload.result.outputSvgAssetId ?? null);
     setStatus("done");
+  }
+
+  async function sendToProof() {
+    if (!outputSvgAssetId) return;
+    const res = await fetch("/api/proof/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ svgAssetId: outputSvgAssetId })
+    });
+    const payload = await res.json();
+    if (!res.ok) {
+      setError(payload?.error?.message ?? "Could not create proof job");
+      return;
+    }
+    router.push(`/proof?jobId=${payload.data.id}&svgAssetId=${outputSvgAssetId}`);
   }
 
   return (
@@ -178,6 +197,11 @@ export default function TracerPage() {
             >
               Copy SVG
             </button>
+            {outputSvgAssetId ? (
+              <button className="rounded border px-3 py-1" onClick={sendToProof}>
+                Send to Proof
+              </button>
+            ) : null}
           </div>
           <div className="rounded border p-3" dangerouslySetInnerHTML={{ __html: svg }} />
         </section>
