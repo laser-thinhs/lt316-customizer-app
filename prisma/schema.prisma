@@ -11,12 +11,15 @@ enum DesignJobStatus {
   draft
   approved
   exported
+  failed
 }
 
 enum AssetKind {
   original
   normalized
   preview
+  proof_png
+  export_zip
 }
 
 enum BatchRunStatus {
@@ -89,6 +92,13 @@ model DesignJob {
   proofImagePath   String?
   placementHash    String?
   templateId       String?
+  sourceSvgAssetId String?
+  proofPngAssetId  String?
+  exportZipAssetId String?
+  proofTemplateId  String?
+  proofPlacementJson Json?
+  proofStatus      String?         @default("draft")
+  proofError       String?
   batchRunItemId   String?         @unique
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
