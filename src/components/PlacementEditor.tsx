@@ -475,6 +475,8 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     } finally {
       setExporting(false);
     }
+  };
+
   const onLayerDragStart = (event: DragEvent<HTMLDivElement>, id: string) => {
     event.dataTransfer.effectAllowed = "move";
     setDraggingLayerId(id);
@@ -502,7 +504,6 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   };
 
   const runPreflight = async () => { setRunningPreflight(true); setStatusMessage(null); try { const res = await fetch(`/api/design-jobs/${designJobId}/preflight`, { method: "POST" }); const json = await res.json(); if (!res.ok) throw new Error(json?.error?.message || "Preflight failed"); setPreflight(json.data as PreflightResult); setStatusMessage("Preflight completed."); } catch (error) { setStatusMessage(error instanceof Error ? error.message : "Unknown preflight error"); } finally { setRunningPreflight(false); } };
-  const exportJob = async () => { setExporting(true); try { const res = await fetch(`/api/design-jobs/${designJobId}/export`, { method: "POST" }); const json = await res.json(); if (!res.ok) throw new Error(json?.error?.message || "Export failed"); setExportPayload(json.data as ExportPayload); setStatusMessage("Export package generated."); } catch (error) { setStatusMessage(error instanceof Error ? error.message : "Unknown export error"); } finally { setExporting(false); } };
   const exportBatch = async () => { setExporting(true); try { const jobIds = batchIds.split(",").map((e) => e.trim()).filter(Boolean); const res = await fetch("/api/design-jobs/export-batch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ designJobIds: jobIds }) }); const json = await res.json(); if (!res.ok) throw new Error(json?.error?.message || "Batch export failed"); setStatusMessage(`Batch exported ${json.data.count} jobs.`); } catch (error) { setStatusMessage(error instanceof Error ? error.message : "Unknown batch export error"); } finally { setExporting(false); } };
 
   return (
@@ -547,17 +548,9 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
           ) : null}
 
           {selectedWarnings.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-xs text-amber-700">{selectedWarnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : null}
+        </div>
 
-          <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold">Export Pack</h3><span className={`rounded-full px-2 py-0.5 text-xs ${preflight?.status === "pass" ? "bg-emerald-100 text-emerald-700" : preflight?.status === "warn" ? "bg-amber-100 text-amber-700" : preflight?.status === "fail" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>{preflight?.status ?? "not-run"}</span></div>
-            <div className="flex flex-wrap gap-2"><button className="rounded border px-2 py-1 text-xs" onClick={() => void runPreflight()} disabled={isRunningPreflight}>{isRunningPreflight ? "Running..." : "Run Preflight"}</button><button className="rounded bg-slate-900 px-2 py-1 text-xs text-white" onClick={() => void exportJob()} disabled={isExporting}>{isExporting ? "Exporting..." : "Export Job"}</button></div>
-            <label className="block text-xs">Batch Job IDs (comma separated)<input value={batchIds} onChange={(event) => setBatchIds(event.target.value)} placeholder="job_a,job_b" className="mt-1 w-full rounded border px-2 py-1" /></label>
-            <button className="rounded border px-2 py-1 text-xs" onClick={() => void exportBatch()} disabled={isExporting}>Export Selected Jobs</button>
-            {(groupedIssues.error.length + groupedIssues.warning.length + groupedIssues.info.length) > 0 ? <div className="space-y-2 text-xs">{["error", "warning", "info"].map((severity) => <div key={severity}><p className="font-medium uppercase">{severity}</p><ul className="list-disc pl-4">{groupedIssues[severity as keyof typeof groupedIssues].map((issue) => <li key={`${issue.code}-${issue.objectId ?? issue.message}`}>{issue.message}{issue.objectId ? ` (${issue.objectId})` : ""}</li>)}</ul></div>)}</div> : null}
-            {exportPayload ? <div className="space-y-2"><label className="block text-xs">Manifest JSON<textarea readOnly value={JSON.stringify(exportPayload.manifest, null, 2)} className="mt-1 h-28 w-full rounded border px-2 py-1 font-mono" /></label><label className="block text-xs">SVG<textarea readOnly value={exportPayload.svg} className="mt-1 h-24 w-full rounded border px-2 py-1 font-mono" /></label><div className="flex gap-2"><button className="rounded border px-2 py-1 text-xs" onClick={() => navigator.clipboard.writeText(JSON.stringify(exportPayload.manifest, null, 2))}>Copy Manifest</button><button className="rounded border px-2 py-1 text-xs" onClick={() => navigator.clipboard.writeText(exportPayload.svg)}>Copy SVG</button></div></div> : null}
-          </section>
-          <pre className="max-h-72 overflow-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(doc ?? createDefaultPlacementDocument(), null, 2)}</pre>
-      <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
+        <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
         <h3 className="text-sm font-semibold">Layers</h3>
         <div className="max-h-52 space-y-1 overflow-auto">
           {doc.objects.map((entry, index) => (
