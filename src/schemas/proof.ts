@@ -1,6 +1,10 @@
 import { z } from "zod";
+import { defaultTemplateId, templates } from "@/lib/templates";
+import { templateSchema } from "@/lib/templates/schema";
 
-export const proofTemplateSchema = z.enum(["40oz_tumbler_wrap"]);
+const templateIds = templates.map((template) => template.id) as [string, ...string[]];
+
+export const proofTemplateSchema = z.enum(templateIds);
 
 export const proofPlacementSchema = z.object({
   scalePercent: z.number().min(1).max(500),
@@ -15,31 +19,58 @@ export const proofPlacementSchema = z.object({
 
 export const proofRenderRequestSchema = z.object({
   svgAssetId: z.string().min(1),
-  templateId: proofTemplateSchema.default("40oz_tumbler_wrap"),
-  placement: proofPlacementSchema,
+  templateId: proofTemplateSchema.default(defaultTemplateId),
+  dpi: z.number().positive().int().optional(),
+  placementMm: proofPlacementSchema.optional(),
+  placement: proofPlacementSchema.optional(),
   highRes: z.boolean().optional()
-});
+}).transform((value) => ({
+  ...value,
+  placementMm: value.placementMm ?? value.placement
+})).pipe(z.object({
+  svgAssetId: z.string().min(1),
+  templateId: proofTemplateSchema,
+  dpi: z.number().positive().int().optional(),
+  placementMm: proofPlacementSchema,
+  placement: proofPlacementSchema.optional(),
+  highRes: z.boolean().optional()
+}));
 
 export const proofExportRequestSchema = z.object({
   jobId: z.string().min(1)
 });
 
+export const proofUiSettingsSchema = z.object({
+  gridEnabled: z.boolean().default(true),
+  gridSpacingMm: z.number().positive().default(10),
+  snapToGrid: z.boolean().default(true),
+  snapToCenterlines: z.boolean().default(true),
+  snapToSafeBounds: z.boolean().default(false)
+});
+
 export type ProofPlacement = z.infer<typeof proofPlacementSchema>;
 export type ProofRenderRequest = z.infer<typeof proofRenderRequestSchema>;
+export type ProofTemplate = z.infer<typeof templateSchema>;
+export type ProofTemplateId = z.infer<typeof proofTemplateSchema>;
 
-export const proofTemplatePresets = {
-  "40oz_tumbler_wrap": {
-    id: "40oz_tumbler_wrap",
-    label: "40oz wrap",
-    widthMm: 280,
-    heightMm: 110,
-    safeMarginMm: 5
-  }
-} as const;
-
-export type ProofTemplateId = keyof typeof proofTemplatePresets;
-
-export function mmToPx(mm: number, templateId: ProofTemplateId, canvasWidthPx: number) {
-  const preset = proofTemplatePresets[templateId];
-  return (mm / preset.widthMm) * canvasWidthPx;
-}
+export const proofTemplatePresets = Object.fromEntries(
+  templates.map((template) => [template.id, {
+    id: template.id,
+    label: template.name,
+    widthMm: template.wrapWidthMm,
+    heightMm: template.wrapHeightMm,
+    safeMarginMm: template.safeMarginMm ?? 0,
+    bleedMm: template.bleedMm ?? 0,
+    defaultDpi: template.defaultDpi,
+    guides: template.guides
+  }])
+) as Record<ProofTemplateId, {
+  id: string;
+  label: string;
+  widthMm: number;
+  heightMm: number;
+  safeMarginMm: number;
+  bleedMm: number;
+  defaultDpi: number;
+  guides: ProofTemplate["guides"];
+}>;
