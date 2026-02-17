@@ -15,6 +15,7 @@ import { buildDefaultImagePlacement } from "@/lib/placement/image-insertion";
 import { useAutosavePlacement } from "@/hooks/useAutosavePlacement";
 import { arePlacementsEqual } from "@/lib/placement/stableCompare";
 import InspectorPanel from "@/components/editor/InspectorPanel";
+import WrapCanvas, { WrapCanvasObject } from "@/components/editor/WrapCanvas";
 
 type Props = {
   designJobId: string;
@@ -120,6 +121,12 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const [hiddenObjectIds, setHiddenObjectIds] = useState<Set<string>>(new Set());
   const [lockedObjectIds, setLockedObjectIds] = useState<Set<string>>(new Set());
   const [blendModeByObjectId, setBlendModeByObjectId] = useState<Record<string, string>>({});
+  const [canvasDpi, setCanvasDpi] = useState(96);
+  const [gridEnabled, setGridEnabled] = useState(true);
+  const [gridSpacingMm, setGridSpacingMm] = useState<5 | 10>(5);
+  const [showCenterlines, setShowCenterlines] = useState(true);
+  const [showSafeMargin, setShowSafeMargin] = useState(true);
+  const [keepAspectResize, setKeepAspectResize] = useState(true);
 
   const selected = useMemo(
     () => doc.objects.find((entry) => entry.id === selectedObjectId) ?? null,
@@ -150,6 +157,35 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     const issues = preflight?.issues ?? [];
     return { error: issues.filter((i) => i.severity === "error"), warning: issues.filter((i) => i.severity === "warning"), info: issues.filter((i) => i.severity === "info") };
   }, [preflight]);
+
+  const canvasObjects = useMemo<WrapCanvasObject[]>(() => {
+    return doc.objects.map((entry) => {
+      if (entry.kind === "image") {
+        return {
+          id: entry.id,
+          kind: entry.kind,
+          xMm: entry.xMm,
+          yMm: entry.yMm,
+          widthMm: entry.widthMm,
+          heightMm: entry.heightMm,
+          rotationDeg: entry.rotationDeg,
+          assetHref: `/api/assets/${entry.assetId}`,
+          label: "image"
+        };
+      }
+
+      return {
+        id: entry.id,
+        kind: entry.kind,
+        xMm: entry.offsetXMm,
+        yMm: entry.offsetYMm,
+        widthMm: entry.boxWidthMm,
+        heightMm: entry.boxHeightMm,
+        rotationDeg: entry.rotationDeg,
+        label: entry.kind
+      };
+    });
+  }, [doc.objects]);
 
   const commitDoc = (next: PlacementDocument) => {
     setUndoStack((prev) => [...prev.slice(-29), doc]);
@@ -296,6 +332,32 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     commitDoc({ ...doc, objects: doc.objects.map((entry) => (entry.id === selected.id ? ({ ...entry, zIndex: minZ - 1 } as PlacementObject) : entry)) });
   };
 
+  const updateObjectTransform = (id: string, patch: { xMm: number; yMm: number; widthMm: number; heightMm: number }) => {
+    commitDoc({
+      ...doc,
+      objects: doc.objects.map((entry) => {
+        if (entry.id !== id) return entry;
+        if (entry.kind === "image") {
+          return {
+            ...entry,
+            xMm: roundToHundredth(patch.xMm),
+            yMm: roundToHundredth(patch.yMm),
+            widthMm: Math.max(0.01, roundToHundredth(patch.widthMm)),
+            heightMm: Math.max(0.01, roundToHundredth(patch.heightMm))
+          };
+        }
+
+        return {
+          ...entry,
+          offsetXMm: roundToHundredth(patch.xMm),
+          offsetYMm: roundToHundredth(patch.yMm),
+          boxWidthMm: Math.max(0.01, roundToHundredth(patch.widthMm)),
+          boxHeightMm: Math.max(0.01, roundToHundredth(patch.heightMm))
+        };
+      })
+    });
+  };
+
   const onUploadArtwork = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -385,6 +447,92 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
             {exportPayload ? <div className="space-y-2"><label className="block text-xs">Manifest JSON<textarea readOnly value={JSON.stringify(exportPayload.manifest, null, 2)} className="mt-1 h-28 w-full rounded border px-2 py-1 font-mono" /></label><label className="block text-xs">SVG<textarea readOnly value={exportPayload.svg} className="mt-1 h-24 w-full rounded border px-2 py-1 font-mono" /></label><div className="flex gap-2"><button className="rounded border px-2 py-1 text-xs" onClick={() => navigator.clipboard.writeText(JSON.stringify(exportPayload.manifest, null, 2))}>Copy Manifest</button><button className="rounded border px-2 py-1 text-xs" onClick={() => navigator.clipboard.writeText(exportPayload.svg)}>Copy SVG</button></div></div> : null}
           </section>
           <pre className="max-h-72 overflow-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(doc ?? createDefaultPlacementDocument(), null, 2)}</pre>
+      <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
+        <h3 className="text-sm font-semibold">Artwork Assets</h3>
+        <label className="block text-sm">
+          <span>Upload Artwork</span>
+          <input type="file" accept=".svg,.png,.jpg,.jpeg,.webp" className="mt-1 block w-full text-xs" onChange={onUploadArtwork} />
+        </label>
+        <div className="max-h-44 space-y-2 overflow-auto">
+          {assets.map((asset) => (
+            <div key={asset.id} className="flex items-center justify-between gap-2 rounded border bg-white p-2 text-xs">
+              <div>
+                <p className="font-medium">{asset.originalName ?? asset.id}</p>
+                <p className="text-slate-600">{asset.widthPx ?? "?"}×{asset.heightPx ?? "?"} px</p>
+              </div>
+              <button className="rounded border px-2 py-1" onClick={() => onAddAssetToCanvas(asset)}>Add to Canvas</button>
+            </div>
+          ))}
+          {assets.length === 0 ? <p className="text-xs text-slate-600">No artwork uploaded for this job yet.</p> : null}
+        </div>
+      </section>
+
+      <label className="block text-sm"><span>Selected Object</span><select value={selectedObjectId ?? ""} onChange={(event) => setSelectedObjectId(event.target.value || null)} className="w-full rounded border px-2 py-1"><option value="">None</option>{doc.objects.map((entry) => (<option key={entry.id} value={entry.id}>{entry.kind}:{entry.id.slice(0, 8)}</option>))}</select></label>
+
+      <section className="space-y-3 rounded border border-slate-200 bg-slate-50 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">Canvas Preview</h3>
+          <label className="text-xs">DPI
+            <input type="number" min={72} step={1} value={canvasDpi} onChange={(event) => setCanvasDpi(Math.max(72, Number(event.target.value) || 96))} className="ml-2 w-20 rounded border px-2 py-1" />
+          </label>
+        </div>
+        <div className="flex flex-wrap gap-3 text-xs">
+          <label className="flex items-center gap-1"><input type="checkbox" checked={gridEnabled} onChange={(event) => setGridEnabled(event.target.checked)} /> Grid</label>
+          <label className="flex items-center gap-1">Spacing
+            <select value={gridSpacingMm} onChange={(event) => setGridSpacingMm(Number(event.target.value) === 10 ? 10 : 5)} className="rounded border px-1 py-0.5">
+              <option value={5}>5mm</option>
+              <option value={10}>10mm</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1"><input type="checkbox" checked={showCenterlines} onChange={(event) => setShowCenterlines(event.target.checked)} /> Centerlines</label>
+          <label className="flex items-center gap-1"><input type="checkbox" checked={showSafeMargin} onChange={(event) => setShowSafeMargin(event.target.checked)} /> Safe margin</label>
+          <label className="flex items-center gap-1"><input type="checkbox" checked={keepAspectResize} onChange={(event) => setKeepAspectResize(event.target.checked)} /> Keep aspect resize</label>
+        </div>
+        <WrapCanvas
+          template={{ widthMm: doc.canvas.widthMm, heightMm: doc.canvas.heightMm, safeMarginMm: 2 }}
+          objects={canvasObjects}
+          selectedId={selectedObjectId}
+          dpi={canvasDpi}
+          gridEnabled={gridEnabled}
+          gridSpacingMm={gridSpacingMm}
+          showCenterlines={showCenterlines}
+          showSafeMargin={showSafeMargin}
+          keepAspectRatio={keepAspectResize}
+          onSelect={setSelectedObjectId}
+          onUpdateTransform={updateObjectTransform}
+        />
+        <p className="text-xs text-slate-600">Drag to move. Shift-drag locks axis. Arrow keys nudge 1mm (Shift = 5mm).</p>
+      </section>
+
+      {isImageObject(selected) ? (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="text-sm">X (mm)<input type="number" step="0.01" value={selected.xMm} onChange={(e) => updateSelectedImage({ xMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Y (mm)<input type="number" step="0.01" value={selected.yMm} onChange={(e) => updateSelectedImage({ yMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Width (mm)<input type="number" min="0.01" step="0.01" value={selected.widthMm} onChange={(e) => updateSelectedImage({ widthMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Height (mm)<input type="number" min="0.01" step="0.01" value={selected.heightMm} onChange={(e) => updateSelectedImage({ heightMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Rotation (deg)<input type="number" step="0.01" value={selected.rotationDeg} onChange={(e) => updateSelectedImage({ rotationDeg: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Opacity<input type="number" min="0" max="1" step="0.01" value={selected.opacity} onChange={(e) => updateSelectedImage({ opacity: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+        </div>
+      ) : null}
+
+      {isTextObject(selected) ? <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="text-sm">Content<textarea value={selected.content} onChange={(event) => updateSelectedText((obj) => ({ ...obj, content: event.target.value }))} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Font<select value={selected.fontFamily} onChange={(event) => updateSelectedText((obj) => ({ ...obj, fontFamily: event.target.value }))} className="w-full rounded border px-2 py-1">{curatedFonts.map((font) => <option key={font} value={font}>{font}</option>)}</select></label>
+          <label className="text-sm">Font Size (mm)<input type="number" step="0.1" value={selected.fontSizeMm} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontSizeMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Letter Spacing (mm)<input type="number" step="0.1" value={selected.letterSpacingMm} onChange={(e) => updateSelectedText((obj) => ({ ...obj, letterSpacingMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Line Height<input type="number" step="0.1" value={selected.lineHeight} onChange={(e) => updateSelectedText((obj) => ({ ...obj, lineHeight: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
+          <label className="text-sm">Box Width (mm)<input type="number" step="0.1" value={selected.boxWidthMm} onChange={(e) => updateSelectedText((obj) => ({ ...obj, boxWidthMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
+          <div className="flex items-center gap-2 text-sm"><label><input type="checkbox" checked={selected.fontWeight >= 700} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontWeight: e.target.checked ? 700 : 400 }))} /> Bold</label><label><input type="checkbox" checked={selected.fontStyle === "italic"} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontStyle: e.target.checked ? "italic" : "normal" }))} /> Italic</label><label><input type="checkbox" checked={selected.allCaps} onChange={(e) => updateSelectedText((obj) => ({ ...obj, allCaps: e.target.checked }))} /> All caps</label><label><input type="checkbox" checked={selected.mirrorX} onChange={(e) => updateSelectedText((obj) => ({ ...obj, mirrorX: e.target.checked }))} /> Mirror X</label><label><input type="checkbox" checked={selected.mirrorY} onChange={(e) => updateSelectedText((obj) => ({ ...obj, mirrorY: e.target.checked }))} /> Mirror Y</label></div>
+          {selected.kind === "text_arc" && <><label className="text-sm">Arc Radius (mm)<input type="number" step="0.1" value={selected.arc.radiusMm} onChange={(e) => updateSelectedText((obj) => obj.kind === "text_arc" ? { ...obj, arc: { ...obj.arc, radiusMm: Number(e.target.value) } } : obj)} className="w-full rounded border px-2 py-1" /></label><label className="text-sm">Arc Start Angle<input type="number" step="0.1" value={selected.arc.startAngleDeg} onChange={(e) => updateSelectedText((obj) => obj.kind === "text_arc" ? { ...obj, arc: { ...obj.arc, startAngleDeg: Number(e.target.value) } } : obj)} className="w-full rounded border px-2 py-1" /></label></>}
+          <button onClick={onConvertToOutline} className="rounded bg-slate-900 px-3 py-2 text-sm text-white">Convert to Outline</button>
+        </div> : null}
+      {selectedWarnings.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-xs text-amber-700">{selectedWarnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : null}
+      <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-semibold">Export Pack</h3>
+          <span className={`rounded-full px-2 py-0.5 text-xs ${preflight?.status === "pass" ? "bg-emerald-100 text-emerald-700" : preflight?.status === "warn" ? "bg-amber-100 text-amber-700" : preflight?.status === "fail" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
+            {preflight?.status ?? "not-run"}
+          </span>
         </div>
 
         <InspectorPanel

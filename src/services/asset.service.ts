@@ -18,6 +18,9 @@ export type AssetResponse = {
   id: string;
   designJobId: string;
   kind: string;
+  filename: string;
+  mime: string;
+  bytes: number | null;
   originalName: string | null;
   mimeType: string;
   byteSize: number | null;
@@ -44,6 +47,9 @@ export function toAssetResponse(asset: {
     id: asset.id,
     designJobId: asset.designJobId,
     kind: asset.kind,
+    filename: asset.originalName ?? `${asset.id}.bin`,
+    mime: asset.mimeType,
+    bytes: asset.byteSize,
     originalName: asset.originalName,
     mimeType: asset.mimeType,
     byteSize: asset.byteSize,
@@ -64,7 +70,7 @@ export async function createAssetFromUpload(input: { designJobId: string; file: 
   }
 
   if (file.size > maxAssetSizeBytes()) {
-    throw new AppError("File exceeds 15 MB limit.", 400, "MAX_FILE_SIZE_EXCEEDED");
+    throw new AppError("File exceeds 10 MB limit.", 400, "MAX_FILE_SIZE_EXCEEDED");
   }
 
   assertSupportedUpload(file.name, file.type);
@@ -117,4 +123,47 @@ export async function listDesignJobAssets(designJobId: string): Promise<AssetRes
   });
 
   return assets.map(toAssetResponse);
+}
+
+export async function listAssetsByJobId(designJobId: string): Promise<AssetResponse[]> {
+  const assets = await prisma.asset.findMany({
+    where: { designJobId },
+    orderBy: { createdAt: "desc" }
+  });
+
+  return assets.map(toAssetResponse);
+}
+
+export async function renameAsset(assetId: string, filename: string): Promise<AssetResponse> {
+  const trimmed = filename.trim();
+  if (!trimmed) {
+    throw new AppError("Filename is required.", 400, "INVALID_FILENAME");
+  }
+
+  const existing = await prisma.asset.findUnique({ where: { id: assetId }, select: { id: true } });
+  if (!existing) {
+    throw new AppError("Asset not found", 404, "NOT_FOUND");
+  }
+
+  const next = await prisma.asset.update({
+    where: { id: assetId },
+    data: { originalName: trimmed }
+  });
+
+  return toAssetResponse(next);
+}
+
+export async function deleteAsset(assetId: string): Promise<void> {
+  const asset = await prisma.asset.findUnique({ where: { id: assetId } });
+  if (!asset) {
+    throw new AppError("Asset not found", 404, "NOT_FOUND");
+  }
+
+  await prisma.asset.delete({ where: { id: assetId } });
+
+  try {
+    await fs.unlink(asset.filePath);
+  } catch {
+    // Ignore missing files because the database entry is the source of truth.
+  }
 }
