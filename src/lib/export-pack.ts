@@ -63,7 +63,18 @@ function intersects(a: ReturnType<typeof toAbsoluteBounds>, b: ReturnType<typeof
 }
 
 function orderObjects(objects: PlacementObject[]) {
-  return objects.filter((object) => object.visible !== false);
+  return objects
+    .filter((object) => object.visible !== false)
+    .sort((left, right) => {
+      const leftZ = "zIndex" in left ? left.zIndex : 0;
+      const rightZ = "zIndex" in right ? right.zIndex : 0;
+
+      if (leftZ !== rightZ) {
+        return leftZ - rightZ;
+      }
+
+      return left.id.localeCompare(right.id);
+    });
 }
 
 function transformForObject(object: PlacementObject, bounds: ReturnType<typeof toAbsoluteBounds>) {
