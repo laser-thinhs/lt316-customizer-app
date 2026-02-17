@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { usePlacementStore, selectPlacementDerived } from "@/store/placementStore";
 import type { PlacementInput } from "@/schemas/placement";
 import { circumferenceMm } from "@/lib/geometry/cylinder";
+
+const TumblerPreview3D = dynamic(() => import("./TumblerPreview3D"), { ssr: false });
 
 type AssetRef = { id: string; mimeType: string; kind: string };
 
@@ -153,12 +156,14 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets 
       </section>
 
       <section className="rounded border bg-white p-3">
-        <h2 className="mb-2 font-semibold">3D Preview (read-only)</h2>
-        <div className="relative h-[420px] rounded bg-slate-900 p-6">
-          <div className="absolute left-1/2 top-0 h-full w-[2px] -translate-x-1/2 bg-red-500/70" />
-          <div className="mx-auto mt-8 h-[320px] w-[220px] rounded-[999px/90px] border border-slate-500 bg-gradient-to-r from-slate-300 via-white to-slate-300" />
-          <div className="absolute inset-x-1/2 top-12 h-2 w-[180px] -translate-x-1/2 rounded bg-blue-500/60" style={{ transform: `translateX(-50%) translateY(${(rect.yMm / derived.zone.heightMm) * 280}px)` }} />
-        </div>
+        <h2 className="mb-2 font-semibold">3D Preview</h2>
+        <TumblerPreview3D
+          diameterMm={profile.diameterMm}
+          heightMm={profile.engraveZoneHeightMm}
+          rotationDeg={store.placement.rotationDeg}
+          offsetYMm={store.placement.offsetYMm}
+          engraveZoneHeightMm={profile.engraveZoneHeightMm}
+        />
         <p className="mt-2 text-xs text-slate-600">Asset: {activeAsset?.id ?? "none"}</p>
       </section>
     </main>

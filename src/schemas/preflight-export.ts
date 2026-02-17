@@ -74,12 +74,24 @@ export const exportManifestSchema = z.object({
   })
 });
 
+export const svgStatsSchema = z.object({
+  pathCountBefore: z.number().int().nonnegative(),
+  pathCountAfter: z.number().int().nonnegative(),
+  nodeCountBefore: z.number().int().nonnegative(),
+  nodeCountAfter: z.number().int().nonnegative(),
+  bytesBefore: z.number().int().nonnegative(),
+  bytesAfter: z.number().int().nonnegative(),
+  specksRemoved: z.number().int().nonnegative()
+});
+
 export const exportPayloadSchema = z.object({
   manifest: exportManifestSchema,
   svg: z.string(),
+  optimizedSvg: z.string().optional(),
   metadata: z.object({
     preflightStatus: preflightStatusSchema,
-    issueCount: z.number().int().nonnegative()
+    issueCount: z.number().int().nonnegative(),
+    svgStats: svgStatsSchema.optional()
   })
 });
 
@@ -102,4 +114,5 @@ export const batchExportResponseSchema = z.object({
 export type PreflightResult = z.infer<typeof preflightResultSchema>;
 export type PreflightIssue = z.infer<typeof preflightIssueSchema>;
 export type ExportManifest = z.infer<typeof exportManifestSchema>;
+export type SvgStats = z.infer<typeof svgStatsSchema>;
 export type ExportPayload = z.infer<typeof exportPayloadSchema>;
