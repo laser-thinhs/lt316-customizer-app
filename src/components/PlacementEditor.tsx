@@ -252,7 +252,6 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
       layerName: `${kind.replace("_", " ")} ${doc.objects.length + 1}`,
       zIndex: doc.objects.length
     }, doc.canvas);
-    const clamped = clampTextPlacementToZone(createTextObject(kind), doc.canvas);
     commitDoc({ ...doc, objects: [...doc.objects, clamped] });
     setSelectedObjectId(clamped.id);
   };
@@ -426,7 +425,6 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
         zIndex: doc.objects.length,
         layerName: asset.originalName ?? undefined
       };
-      const imageObj = buildDefaultImagePlacement({ assetId: asset.id, widthPx: asset.widthPx, heightPx: asset.heightPx, canvas: doc.canvas });
       commitDoc({ ...doc, objects: [...doc.objects, imageObj] });
       setSelectedObjectId(imageObj.id);
       setStatusMessage(`Added ${asset.originalName ?? asset.id} to canvas`);
@@ -439,7 +437,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const patchLayer = (id: string, patch: Partial<PlacementObject>) => {
     commitDoc({
       ...doc,
-      objects: doc.objects.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry))
+      objects: doc.objects.map((entry) => (entry.id === id ? { ...entry, ...patch } as PlacementObject : entry))
     });
   };
 
