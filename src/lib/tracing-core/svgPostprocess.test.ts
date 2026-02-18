@@ -10,7 +10,7 @@ describe("SVG Post-Processing", () => {
 
   it("should remove specks (tiny paths)", () => {
     const tinyPath = '<svg viewBox="0 0 100 100"><path d="M0,0 L0.5,0.5"/></svg>';
-    const { optimized, stats } = postprocessSvg(tinyPath, { minSpeckArea: 10 });
+    const { stats } = postprocessSvg(tinyPath, { minSpeckArea: 10 });
     expect(stats.pathCountAfter).toBeLessThanOrEqual(stats.pathCountBefore);
   });
 
@@ -24,7 +24,7 @@ describe("SVG Post-Processing", () => {
 
   it("should remove empty paths", () => {
     const input = '<svg viewBox="0 0 100 100"><path d=""/></svg>';
-    const { optimized, stats } = postprocessSvg(input);
+    const { stats } = postprocessSvg(input);
     expect(stats.pathCountAfter).toBe(0);
   });
 

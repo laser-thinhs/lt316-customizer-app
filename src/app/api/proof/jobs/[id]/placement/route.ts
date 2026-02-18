@@ -1,6 +1,7 @@
 import { fail, ok } from "@/lib/response";
 import { proofPlacementSchema, proofTemplateSchema, proofUiSettingsSchema } from "@/schemas/proof";
 import { z } from "zod";
+import { requireApiRole } from "@/lib/api-auth";
 import { updateProofPlacement } from "@/services/proof.service";
 
 const schema = z.object({
@@ -20,6 +21,7 @@ const schema = z.object({
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    requireApiRole(request, ["admin", "operator"]);
     const body = await request.json();
     const input = schema.parse(body);
     const data = await updateProofPlacement((await params).id, input.placementMm, input.templateId, input.dpi, input.uiSettings);

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { fail, ok } from "@/lib/response";
 import { AppError } from "@/lib/errors";
+import { requireApiRole } from "@/lib/api-auth";
 import { deleteAsset, renameAsset } from "@/services/asset.service";
 
 const renameSchema = z.object({
@@ -30,6 +31,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    requireApiRole(request, ["admin", "operator"]);
     const { id } = await params;
     const parsed = renameSchema.parse(await request.json());
     const asset = await renameAsset(id, parsed.filename);
@@ -39,8 +41,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 }
 
-export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    requireApiRole(request, ["admin", "operator"]);
     const { id } = await params;
     await deleteAsset(id);
     return ok({ deleted: true });

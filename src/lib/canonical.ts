@@ -2,6 +2,12 @@ import crypto from "node:crypto";
 
 const DEFAULT_PRECISION = Number(process.env.PLACEMENT_ROUNDING_MM ?? "0.001");
 
+type SortableEntry = { zIndex?: unknown; id?: unknown };
+
+function isSortableEntry(value: unknown): value is SortableEntry {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function roundNumber(value: number, precision = DEFAULT_PRECISION) {
   const factor = 1 / precision;
   return Math.round(value * factor) / factor;
@@ -14,8 +20,8 @@ function canonicalize(value: unknown, precision: number): unknown {
 
   if (Array.isArray(value)) {
     const normalized = value.map((item) => canonicalize(item, precision));
-    if (normalized.every((entry) => entry && typeof entry === "object" && !Array.isArray(entry))) {
-      return normalized.sort((a: any, b: any) => {
+    if (normalized.every(isSortableEntry)) {
+      return normalized.sort((a, b) => {
         const az = Number(a.zIndex ?? 0);
         const bz = Number(b.zIndex ?? 0);
         if (az !== bz) return az - bz;

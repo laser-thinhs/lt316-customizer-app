@@ -4,9 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { fail, ok } from "@/lib/response";
 import { normalizeSvg } from "@/lib/assets";
 import { AppError } from "@/lib/errors";
+import { requireApiRole } from "@/lib/api-auth";
 
-export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    requireApiRole(request, ["admin", "operator"]);
     const { id } = await params;
     const asset = await prisma.asset.findUnique({ where: { id } });
     if (!asset) throw new AppError("Asset not found", 404, "NOT_FOUND");

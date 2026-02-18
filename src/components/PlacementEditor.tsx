@@ -220,7 +220,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     setDoc({ ...next, objects: normalizeObjectOrder(next.objects) });
   };
 
-  const refreshAssets = async () => {
+  const refreshAssets = useCallback(async () => {
     try {
       const res = await fetch(`/api/design-jobs/${designJobId}/assets`);
       if (!res || typeof res.json !== "function") return setAssets([]);
@@ -230,11 +230,11 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     } catch {
       setAssets([]);
     }
-  };
+  }, [designJobId]);
 
   useEffect(() => {
     void refreshAssets();
-  }, [designJobId]);
+  }, [refreshAssets]);
 
   const handleRecoveredPlacement = useCallback((localDraft: PlacementDocument) => setDoc(localDraft), []);
   const handleSavedPlacement = useCallback((savedDoc: PlacementDocument) => {
@@ -837,8 +837,30 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
           onBringForward={onBringForward}
           onSendBackward={onSendBackward}
           onUpdateOpacity={(opacity) => isImageObject(selected) ? updateSelectedImage({ opacity }) : undefined}
-          onToggleLock={() => selected ? setLockedObjectIds((prev) => { const next = new Set(prev); next.has(selected.id) ? next.delete(selected.id) : next.add(selected.id); return next; }) : undefined}
-          onToggleHide={() => selected ? setHiddenObjectIds((prev) => { const next = new Set(prev); next.has(selected.id) ? next.delete(selected.id) : next.add(selected.id); return next; }) : undefined}
+          onToggleLock={() => {
+            if (!selected) return;
+            setLockedObjectIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(selected.id)) {
+                next.delete(selected.id);
+              } else {
+                next.add(selected.id);
+              }
+              return next;
+            });
+          }}
+          onToggleHide={() => {
+            if (!selected) return;
+            setHiddenObjectIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(selected.id)) {
+                next.delete(selected.id);
+              } else {
+                next.add(selected.id);
+              }
+              return next;
+            });
+          }}
           onUpdateBlendMode={(blendMode) => selected ? setBlendModeByObjectId((prev) => ({ ...prev, [selected.id]: blendMode })) : undefined}
           hiddenObjectIds={hiddenObjectIds}
           lockedObjectIds={lockedObjectIds}

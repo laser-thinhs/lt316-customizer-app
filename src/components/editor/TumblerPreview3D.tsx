@@ -14,7 +14,7 @@ type Props = {
 export default function TumblerPreview3D({
   diameterMm = 76.2,
   heightMm = 100,
-  designSvgUrl,
+  designSvgUrl = "",
   rotationDeg = 0,
   offsetYMm = 0,
   engraveZoneHeightMm = 100
@@ -90,7 +90,28 @@ export default function TumblerPreview3D({
         });
 
         const cylinder = new THREE.Mesh(geometry, material);
+        cylinder.rotation.y = (rotationDeg ?? 0) * (Math.PI / 180);
+        cylinder.position.y = Number(offsetYMm ?? 0);
         scene.add(cylinder);
+
+        if (ctx && designSvgUrl) {
+          ctx.fillStyle = "#22c55e";
+          ctx.font = "12px Arial";
+          ctx.fillText(`Artwork: ${designSvgUrl.split("/").pop() ?? "linked"}`, 256, 308);
+          texture.needsUpdate = true;
+        }
+
+        if (ctx && Number.isFinite(engraveZoneHeightMm)) {
+          const guideY = Math.max(20, Math.min(492, 512 - Number(engraveZoneHeightMm) * 2));
+          ctx.strokeStyle = "#f59e0b";
+          ctx.setLineDash([6, 4]);
+          ctx.beginPath();
+          ctx.moveTo(40, guideY);
+          ctx.lineTo(472, guideY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          texture.needsUpdate = true;
+        }
 
         // Animation
         let animationId: number;
@@ -116,7 +137,7 @@ export default function TumblerPreview3D({
         console.error("Three.js error:", err);
       }
     });
-  }, [diameterMm, heightMm]);
+  }, [diameterMm, heightMm, designSvgUrl, rotationDeg, offsetYMm, engraveZoneHeightMm]);
 
   return (
     <div

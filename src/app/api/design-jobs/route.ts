@@ -1,8 +1,10 @@
 import { fail, ok } from "@/lib/response";
+import { requireApiRole } from "@/lib/api-auth";
 import { createDesignJob } from "@/services/design-job.service";
 
 export async function POST(request: Request) {
   try {
+    requireApiRole(request, ["admin", "operator"]);
     const body = await request.json();
     const data = await createDesignJob(body);
     return ok(data, 201);

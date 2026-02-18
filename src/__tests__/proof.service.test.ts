@@ -1,6 +1,4 @@
-import os from "node:os";
-import path from "node:path";
-import { promises as fs } from "node:fs";
+import JSZip from "jszip";
 
 jest.mock("@/lib/prisma", () => ({
   prisma: {
@@ -77,21 +75,13 @@ describe("proof service", () => {
     expect(result.exportAssetId).toBe("zip_asset");
 
     const zipBuffer = (createTracerAsset as jest.Mock).mock.calls[1][0].buffer as Buffer;
-    const tmpZip = path.join(os.tmpdir(), `proof-test-${Date.now()}.zip`);
-    await fs.writeFile(tmpZip, zipBuffer);
+    const zip = await JSZip.loadAsync(zipBuffer);
+    const names = Object.keys(zip.files);
 
-    const { execFile } = await import("node:child_process");
-    const listed = await new Promise<string>((resolve, reject) => {
-      execFile("unzip", ["-l", tmpZip], (error, stdout) => {
-        if (error) return reject(error);
-        resolve(stdout);
-      });
-    });
-
-    expect(listed).toContain("production.svg");
-    expect(listed).toContain("proof.png");
-    expect(listed).toContain("template.json");
-    expect(listed).toContain("placement.json");
-    expect(listed).toContain("README.txt");
+    expect(names).toContain("production.svg");
+    expect(names).toContain("proof.png");
+    expect(names).toContain("template.json");
+    expect(names).toContain("placement.json");
+    expect(names).toContain("README.txt");
   });
 });

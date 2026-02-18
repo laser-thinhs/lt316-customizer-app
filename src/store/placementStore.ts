@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { clampPlacementToZone, resolveAnchoredRect, type ZoneRectMm, validatePlacement } from "@/lib/geometry/cylinder";
-import type { PlacementInput } from "@/schemas/placement";
 
 type LegacyPlacementInput = {
   widthMm: number;

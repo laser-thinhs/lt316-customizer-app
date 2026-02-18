@@ -6,13 +6,11 @@ const DEFAULT_MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB ?? 10);
 const DEFAULT_MAX_DIMENSION = Number(process.env.MAX_DIMENSION ?? 2000);
 const DEFAULT_MIN_SPECK_AREA = Number(process.env.MIN_SPECK_AREA ?? 6);
 
-const CoreErrorShape = z.object({
-  code: z.string(),
-  message: z.string(),
-  details: z.unknown().optional()
-});
-
-export type CoreError = z.infer<typeof CoreErrorShape>;
+export type CoreError = {
+  code: string;
+  message: string;
+  details?: unknown;
+};
 
 export class TracerCoreError extends Error {
   code: string;

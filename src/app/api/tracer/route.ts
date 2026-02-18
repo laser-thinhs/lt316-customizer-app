@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { normalizeTracerError } from "../../../../lib/tracing-core";
 import { getTracerProvider } from "../../../../lib/tracer-provider";
+import { requireApiRole } from "@/lib/api-auth";
 import { createTracerAsset } from "@/lib/tracer-asset-store";
 
 const TRACER_TIMEOUT_MS = Number(process.env.TRACER_TIMEOUT_MS ?? 15000);
@@ -32,6 +33,7 @@ export async function POST(req: Request) {
   console.info("[tracer] request:start", { requestId });
 
   try {
+    requireApiRole(req, ["admin", "operator"]);
     const form = await req.formData();
     const file = form.get("file");
     const settingsRaw = form.get("settings");
