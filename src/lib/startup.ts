@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/errors";
+import { validateAuthConfig } from "@/lib/api-auth";
 
 let startupChecksRan = false;
 
@@ -35,6 +36,7 @@ export async function runStartupChecks() {
   try {
     assertDatabaseUrl();
     await assertDatabaseConnectivity();
+    validateAuthConfig();
     startupChecksRan = true;
   } catch (error) {
     const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
