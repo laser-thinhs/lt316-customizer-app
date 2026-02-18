@@ -69,3 +69,16 @@ class Asset(Base):
     widthPx: Mapped[int | None] = mapped_column()
     heightPx: Mapped[int | None] = mapped_column()
     createdAt: Mapped[DateTime] = mapped_column(DateTime(timezone=True))
+
+
+class ExportArtifact(Base):
+    __tablename__ = "ExportArtifact"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    designJobId: Mapped[str] = mapped_column(String)
+    kind: Mapped[str] = mapped_column(Enum("manifest", "svg", name="ExportArtifactKind"))
+    version: Mapped[str] = mapped_column(String)
+    preflightStatus: Mapped[str] = mapped_column(Enum("pass", "warn", "fail", name="ExportPreflightStatus"))
+    payloadJson: Mapped[dict | None] = mapped_column(JSON)
+    textContent: Mapped[str | None] = mapped_column(String)
+    createdAt: Mapped[DateTime] = mapped_column(DateTime(timezone=True))
