@@ -5,11 +5,12 @@ import { SectionType } from "@/lib/page-layout/types";
 export type SettingsFieldDefinition = {
   key: string;
   label: string;
-  kind: "text" | "textarea" | "url" | "number" | "checkbox";
+  kind: "text" | "textarea" | "url" | "number" | "checkbox" | "select";
   placeholder?: string;
   min?: number;
   max?: number;
   step?: number;
+  options?: Array<{ label: string; value: string }>;
 };
 
 export type SectionDefinition<TSettings> = {
@@ -18,5 +19,5 @@ export type SectionDefinition<TSettings> = {
   defaultSettings: TSettings;
   settingsSchema: z.ZodType<TSettings>;
   fields: SettingsFieldDefinition[];
-  render: (settings: TSettings) => React.ReactNode;
+  render(settings: TSettings): React.ReactNode;
 };

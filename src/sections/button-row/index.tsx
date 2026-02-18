@@ -1,57 +1,47 @@
 import { z } from "zod";
 import { SectionDefinition } from "@/sections/types";
 
-export type ButtonRowSettings = {
-  primaryLabel: string;
-  primaryUrl: string;
-  secondaryLabel: string;
-  secondaryUrl: string;
-  align: "left" | "center" | "right";
+type ButtonItem = {
+  label: string;
+  href: string;
 };
 
+export type ButtonRowSettings = {
+  buttons: ButtonItem[];
+};
+
+const buttonItemSchema: z.ZodType<ButtonItem> = z.object({
+  label: z.string().max(40),
+  href: z.string().max(2048)
+});
+
 const buttonRowSettingsSchema: z.ZodType<ButtonRowSettings> = z.object({
-  primaryLabel: z.string().max(40).default(""),
-  primaryUrl: z.string().max(2048).default(""),
-  secondaryLabel: z.string().max(40).default(""),
-  secondaryUrl: z.string().max(2048).default(""),
-  align: z.enum(["left", "center", "right"]).default("center")
-}) as z.ZodType<ButtonRowSettings>;
+  buttons: z.array(buttonItemSchema).max(6)
+});
 
 export const buttonRowSection: SectionDefinition<ButtonRowSettings> = {
-  type: "button-row",
+  type: "buttonRow",
   label: "Button Row",
   defaultSettings: {
-    primaryLabel: "Primary",
-    primaryUrl: "#",
-    secondaryLabel: "Secondary",
-    secondaryUrl: "#",
-    align: "center"
+    buttons: [
+      { label: "Primary", href: "#" },
+      { label: "Secondary", href: "#" }
+    ]
   },
   settingsSchema: buttonRowSettingsSchema,
-  fields: [
-    { key: "primaryLabel", label: "Primary label", kind: "text" },
-    { key: "primaryUrl", label: "Primary URL", kind: "url" },
-    { key: "secondaryLabel", label: "Secondary label", kind: "text" },
-    { key: "secondaryUrl", label: "Secondary URL", kind: "url" },
-    { key: "align", label: "Alignment (left/center/right)", kind: "text" }
-  ],
+  fields: [{ key: "buttons", label: "Buttons (label|href per line)", kind: "textarea" }],
   render: (settings) => (
     <section className="rounded-xl border border-slate-200 bg-white p-6">
-      <div
-        className={`flex flex-wrap gap-3 ${
-          settings.align === "left" ? "justify-start" : settings.align === "right" ? "justify-end" : "justify-center"
-        }`}
-      >
-        {settings.primaryLabel ? (
-          <a href={settings.primaryUrl || "#"} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-            {settings.primaryLabel}
+      <div className="flex flex-wrap justify-center gap-3">
+        {settings.buttons.map((button, index) => (
+          <a
+            key={`${button.label}-${index}`}
+            href={button.href || "#"}
+            className={index === 0 ? "rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white" : "rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-800"}
+          >
+            {button.label}
           </a>
-        ) : null}
-        {settings.secondaryLabel ? (
-          <a href={settings.secondaryUrl || "#"} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-800">
-            {settings.secondaryLabel}
-          </a>
-        ) : null}
+        ))}
       </div>
     </section>
   )

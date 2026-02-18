@@ -1,6 +1,8 @@
 import { z } from "zod";
-import { PageLayout } from "@/lib/page-layout/types";
+import { PageLayout, SectionType, SECTION_TYPES } from "@/lib/page-layout/types";
 import { sectionRegistry } from "@/sections/registry";
+
+const sectionTypeSchema = z.enum(SECTION_TYPES);
 
 export const sectionInstanceSchema = z.object({
   id: z.string().min(1),
@@ -14,6 +16,10 @@ export const pageLayoutSchema = z.object({
   sections: z.array(sectionInstanceSchema)
 });
 
+function isSectionType(value: string): value is SectionType {
+  return sectionTypeSchema.safeParse(value).success;
+}
+
 export function createDefaultLayout(slug: string): PageLayout {
   return {
     slug,
@@ -24,9 +30,9 @@ export function createDefaultLayout(slug: string): PageLayout {
         settings: sectionRegistry.hero.defaultSettings
       },
       {
-        id: `${slug}-rich-text-1`,
-        type: "rich-text",
-        settings: sectionRegistry["rich-text"].defaultSettings
+        id: `${slug}-richText-1`,
+        type: "richText",
+        settings: sectionRegistry.richText.defaultSettings
       }
     ]
   };
@@ -34,33 +40,19 @@ export function createDefaultLayout(slug: string): PageLayout {
 
 export function sanitizeLayout(layout: z.infer<typeof pageLayoutSchema>): PageLayout {
   const sanitizedSections = layout.sections.flatMap((section) => {
-    const definition = sectionRegistry[section.type as keyof typeof sectionRegistry];
-
-    if (!definition) {
-      console.warn(`Skipping unknown section type: ${String(section.type)}`);
+    if (!isSectionType(section.type)) {
       return [];
     }
 
+    const definition = sectionRegistry[section.type];
     const parsedSettings = definition.settingsSchema.safeParse(section.settings);
-
-    if (!parsedSettings.success) {
-      console.warn(`Invalid settings for section ${section.id}; using defaults.`);
-      return [
-        {
-          id: section.id,
-          type: definition.type,
-          hidden: section.hidden,
-          settings: definition.defaultSettings
-        }
-      ];
-    }
 
     return [
       {
         id: section.id,
         type: definition.type,
         hidden: section.hidden,
-        settings: parsedSettings.data
+        settings: parsedSettings.success ? parsedSettings.data : definition.defaultSettings
       }
     ];
   });
@@ -77,7 +69,7 @@ export function parseLayoutFromUnknown(value: unknown, slug: string): { layout: 
   if (!parsed.success) {
     return {
       layout: createDefaultLayout(slug),
-      error: "Validation error. A default layout was loaded."
+      error: parsed.error.issues.map((issue) => issue.message).join("; ")
     };
   }
 
