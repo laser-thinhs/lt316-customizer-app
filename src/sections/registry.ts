@@ -10,6 +10,15 @@ export const sectionRegistry: Record<SectionType, SectionDefinition<unknown>> = 
   richText: richTextSection as SectionDefinition<unknown>,
   imageText: imageTextSection as SectionDefinition<unknown>,
   buttonRow: buttonRowSection as SectionDefinition<unknown>
+function asUnknownSection<TSettings>(definition: SectionDefinition<TSettings>): SectionDefinition<unknown> {
+  return definition as unknown as SectionDefinition<unknown>;
+}
+
+const sectionRegistry: Record<SectionType, SectionDefinition<unknown>> = {
+  hero: asUnknownSection(heroSection),
+  "rich-text": asUnknownSection(richTextSection),
+  "image-text": asUnknownSection(imageTextSection),
+  "button-row": asUnknownSection(buttonRowSection)
 };
 
 export function getSectionDefinition(type: SectionType) {
