@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy import select
 from ..auth import require_api_role
@@ -488,6 +488,97 @@ def _build_export_svg(job: DesignJob, product: ProductProfile) -> str:
     )
 
 
+def _build_export_svg_route_svg(job: DesignJob, include_guides: bool) -> str:
+    placement = parse_placement_document(job.placementJson)
+    canvas = placement.get("canvas", {}) if isinstance(placement, dict) else {}
+    canvas_width = _to_float(canvas.get("widthMm")) or 0
+    canvas_height = _to_float(canvas.get("heightMm")) or 0
+
+    wrap = placement.get("wrap", {}) if isinstance(placement, dict) else {}
+    wrap_enabled = bool(wrap.get("enabled", False))
+    wrap_width = _to_float(wrap.get("wrapWidthMm")) or canvas_width
+    seam_x = _to_float(wrap.get("seamXmm")) or 0
+    overlap = _to_float(wrap.get("microOverlapMm")) or 0
+
+    raw_objects = placement.get("objects", []) if isinstance(placement, dict) else []
+    objects = [obj for obj in raw_objects if isinstance(obj, dict) and obj.get("visible", True) is not False]
+    ordered_objects = sorted(objects, key=lambda obj: (obj.get("zIndex", 0), str(obj.get("id", ""))))
+
+    def object_svg_fragment(obj: dict[str, Any], translate_x: float = 0.0) -> str:
+        obj_id = _escape_xml(str(obj.get("id", "")))
+        bounds = _to_absolute_bounds(obj)
+        if bounds is None:
+            return ""
+
+        kind = obj.get("kind")
+        if kind == "vector":
+            path_data = _escape_xml(str(obj.get("pathData", "")))
+            base_x = _to_float(obj.get("offsetXMm")) or bounds["xMm"]
+            base_y = _to_float(obj.get("offsetYMm")) or bounds["yMm"]
+            rotation = _to_float(obj.get("rotationDeg")) or 0
+            transform = f'translate({_round_mm(base_x + translate_x)} {_round_mm(base_y)}) rotate({_round_mm(rotation)})'
+            return f'<path id="{obj_id}" d="{path_data}" transform="{transform}" fill="none" stroke="black" stroke-width="0.1" />'
+
+        if kind == "image":
+            return (
+                f'<rect id="{obj_id}" x="{_round_mm(bounds["xMm"] + translate_x)}" y="{_round_mm(bounds["yMm"])}" '
+                f'width="{_round_mm(bounds["widthMm"])}" height="{_round_mm(bounds["heightMm"])}" fill="none" stroke="black" stroke-width="0.1" />'
+            )
+
+        content = _escape_xml(str(obj.get("content", "")))
+        font_family = _escape_xml(str(obj.get("fontFamily", "Arial")))
+        font_size = _round_mm(_to_float(obj.get("fontSizeMm")) or 1)
+        rotation = _round_mm(_to_float(obj.get("rotationDeg")) or 0)
+        base_x = _to_float(obj.get("offsetXMm")) or bounds["xMm"]
+        base_y = _to_float(obj.get("offsetYMm")) or bounds["yMm"]
+        transform = f'translate({_round_mm(base_x + translate_x)} {_round_mm(base_y)}) rotate({rotation})'
+        horizontal_align = str(obj.get("horizontalAlign", "left"))
+        text_anchor = "middle" if horizontal_align == "center" else "end" if horizontal_align == "right" else "start"
+        fill_mode = str(obj.get("fillMode", "fill"))
+        fill = "none" if fill_mode == "stroke" else "black"
+        stroke = "black" if fill_mode == "stroke" else "none"
+        stroke_width = _round_mm(_to_float(obj.get("strokeWidthMm")) or 0)
+        return (
+            f'<text id="{obj_id}" transform="{transform}" font-family="{font_family}" font-size="{font_size}mm" '
+            f'text-anchor="{text_anchor}" fill="{fill}" stroke="{stroke}" stroke-width="{stroke_width}">{content}</text>'
+        )
+
+    fragments: list[str] = []
+    for obj in ordered_objects:
+        base_fragment = object_svg_fragment(obj)
+        if base_fragment:
+            fragments.append(base_fragment)
+
+        if wrap_enabled and overlap > 0 and wrap_width > 0:
+            bounds = _to_absolute_bounds(obj)
+            if bounds is not None:
+                if bounds["xMm"] + bounds["widthMm"] >= wrap_width - overlap:
+                    dup_left = object_svg_fragment(obj, -wrap_width)
+                    if dup_left:
+                        fragments.append(dup_left)
+                if bounds["xMm"] <= overlap:
+                    dup_right = object_svg_fragment(obj, wrap_width)
+                    if dup_right:
+                        fragments.append(dup_right)
+
+    guides = ""
+    if include_guides and wrap_enabled:
+        guides = (
+            f'<g id="guides">'
+            f'<line x1="{_round_mm(seam_x)}" y1="0" x2="{_round_mm(seam_x)}" y2="{_round_mm(canvas_height)}" stroke="#ef4444" stroke-width="0.1" />'
+            f'<line x1="{_round_mm(seam_x + wrap_width)}" y1="0" x2="{_round_mm(seam_x + wrap_width)}" y2="{_round_mm(canvas_height)}" stroke="#ef4444" stroke-width="0.1" />'
+            f'</g>'
+        )
+
+    return (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{_round_mm(canvas_width)}mm" height="{_round_mm(canvas_height)}mm" viewBox="0 0 {_round_mm(canvas_width)} {_round_mm(canvas_height)}">\n'
+        f'  <g id="artwork">\n    {'\n    '.join(fragments)}\n  </g>\n'
+        f'  {guides}\n'
+        "</svg>"
+    )
+
+
 @router.get("/design-jobs/{id}")
 def get_design_job_by_id(id: str):
     with SessionLocal() as db:
@@ -749,3 +840,22 @@ def export_design_job(id: str):
             },
         }
     }
+
+
+@router.post("/design-jobs/{id}/export/svg", dependencies=[Depends(require_api_role)])
+def export_design_job_svg(id: str, request: Request):
+    with SessionLocal() as db:
+        job = db.get(DesignJob, id)
+        if not job:
+            raise AppError("DesignJob not found", 404, "NOT_FOUND")
+
+    include_guides = request.query_params.get("guides") == "1"
+    svg = _build_export_svg_route_svg(job, include_guides=include_guides)
+    return Response(
+        content=svg,
+        status_code=200,
+        media_type="image/svg+xml; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="job-{id}.svg"',
+        },
+    )
