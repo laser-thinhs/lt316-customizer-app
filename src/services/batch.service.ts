@@ -8,6 +8,7 @@ import { resolveTokensForObject, validateTokenValues } from "@/lib/vdp";
 import { renderProofImage } from "./proof-renderer.service";
 import { fingerprint } from "@/lib/canonical";
 import { logAudit } from "./audit.service";
+import type { Prisma } from "@prisma/client";
 
 const MAX_ROWS = Number(process.env.BATCH_MAX_ROWS ?? "500");
 const MAX_CSV_BYTES = Number(process.env.CSV_MAX_SIZE_BYTES ?? "1048576");
@@ -111,7 +112,7 @@ export async function createBatchRun(rawInput: unknown) {
         productProfileId: input.productProfileId,
         machineProfileId: "fiber-galvo-300-lens-default",
         status: "draft",
-        placementJson: policyResult.document as any,
+        placementJson: policyResult.document as Prisma.InputJsonValue,
         proofImagePath: rendered.imagePath,
         placementHash: fingerprint(policyResult.document),
         templateId: template.id,
