@@ -22,28 +22,31 @@ export default function TumblerPreview3D({
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
 
     // Dynamically load Three.js to avoid SSR issues
     import("three").then((THREE) => {
+      if (disposed || !containerRef.current) return;
       try {
-        const width = containerRef.current!.clientWidth;
-        const height = containerRef.current!.clientHeight;
+        const width = Math.max(1, container.clientWidth);
+        const height = Math.max(1, container.clientHeight);
 
         // Scene
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x1a1a2e);
 
         // Camera
-        const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-        camera.position.set(150, 60, 150);
-        camera.lookAt(0, 0, 0);
+        const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 5000);
 
         // Renderer
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(width, height);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        containerRef.current!.appendChild(renderer.domElement);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
 
         // Lights
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
@@ -94,6 +97,26 @@ export default function TumblerPreview3D({
         cylinder.position.y = Number(offsetYMm ?? 0);
         scene.add(cylinder);
 
+        const fitCamera = () => {
+          const aspect = Math.max(0.01, camera.aspect);
+          const fov = THREE.MathUtils.degToRad(camera.fov);
+          const halfHeight = Math.max(1, cylinderHeight / 2);
+          const halfWidth = Math.max(1, radius);
+          const distanceForHeight = halfHeight / Math.tan(fov / 2);
+          const horizontalFov = 2 * Math.atan(Math.tan(fov / 2) * aspect);
+          const distanceForWidth = halfWidth / Math.tan(horizontalFov / 2);
+          const fitDistance = Math.max(distanceForHeight, distanceForWidth) * 1.25;
+
+          const centerY = cylinder.position.y;
+          camera.position.set(fitDistance, centerY + fitDistance * 0.18, fitDistance);
+          camera.lookAt(0, centerY, 0);
+          camera.near = Math.max(0.1, fitDistance / 100);
+          camera.far = Math.max(2000, fitDistance * 10);
+          camera.updateProjectionMatrix();
+        };
+
+        fitCamera();
+
         if (ctx && designSvgUrl) {
           ctx.fillStyle = "#22c55e";
           ctx.font = "12px Arial";
@@ -122,11 +145,23 @@ export default function TumblerPreview3D({
         };
         animate();
 
+        const resizeObserver = new ResizeObserver((entries) => {
+          const entry = entries[0];
+          if (!entry) return;
+          const nextWidth = Math.max(1, Math.floor(entry.contentRect.width));
+          const nextHeight = Math.max(1, Math.floor(entry.contentRect.height));
+          camera.aspect = nextWidth / nextHeight;
+          fitCamera();
+          renderer.setSize(nextWidth, nextHeight);
+        });
+        resizeObserver.observe(container);
+
         // Cleanup
-        return () => {
+        cleanup = () => {
           cancelAnimationFrame(animationId);
-          if (containerRef.current?.contains(renderer.domElement)) {
-            containerRef.current.removeChild(renderer.domElement);
+          resizeObserver.disconnect();
+          if (container.contains(renderer.domElement)) {
+            container.removeChild(renderer.domElement);
           }
           geometry.dispose();
           material.dispose();
@@ -137,6 +172,11 @@ export default function TumblerPreview3D({
         console.error("Three.js error:", err);
       }
     });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
   }, [diameterMm, heightMm, designSvgUrl, rotationDeg, offsetYMm, engraveZoneHeightMm]);
 
   return (
