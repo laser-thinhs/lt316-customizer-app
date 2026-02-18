@@ -5,7 +5,7 @@ $null = docker --version
 $null = docker compose version
 
 Write-Host "[stack:up] Starting Docker services (db, py-api, studio-ai)..."
-docker compose up -d db py-api studio-ai | Out-Null
+docker compose up -d --build db py-api studio-ai | Out-Null
 
 Write-Host "[stack:up] Waiting for DB readiness..."
 $dbReady = $false
