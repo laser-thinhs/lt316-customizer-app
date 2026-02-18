@@ -18,18 +18,13 @@ export function PageLayoutRenderer({ layout, selectedId, onSelectSection, editab
 
         const definition = sectionRegistry[section.type];
 
-        if (!definition) {
-          console.warn(`Unknown section type encountered in preview: ${String(section.type)}`);
-          return null;
-        }
-
         return (
           <div
             key={section.id}
             className={`${editable ? "cursor-pointer rounded-xl p-1" : ""} ${selectedId === section.id ? "ring-2 ring-indigo-500" : ""}`}
             onClick={editable ? () => onSelectSection?.(section.id) : undefined}
           >
-            {definition.render(section.settings as never)}
+            {definition.render(section.settings)}
           </div>
         );
       })}

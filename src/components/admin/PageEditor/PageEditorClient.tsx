@@ -1,13 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PageLayout, SectionType } from "@/lib/page-layout/types";
 import { createDefaultLayout, parseLayoutFromUnknown } from "@/lib/page-layout/schemas";
-import { listSectionDefinitions, sectionRegistry } from "@/sections/registry";
+import { PageLayout, SectionType } from "@/lib/page-layout/types";
 import { PageLayoutRenderer } from "@/sections/PageLayoutRenderer";
+import { listSectionDefinitions, sectionRegistry } from "@/sections/registry";
+import { SettingsFieldDefinition } from "@/sections/types";
 
 type Props = {
   slug: string;
+};
+
+type ButtonRowInput = {
+  label: string;
+  href: string;
 };
 
 function createSectionId(type: SectionType) {
@@ -19,6 +25,32 @@ function moveItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   const [moved] = cloned.splice(fromIndex, 1);
   cloned.splice(toIndex, 0, moved);
   return cloned;
+}
+
+function parseButtonsInput(value: string): ButtonRowInput[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [label, href] = line.split("|").map((part) => part.trim());
+      return { label: label ?? "", href: href ?? "" };
+    })
+    .filter((button) => button.label);
+}
+
+function formatButtonsInput(value: unknown): string {
+  if (!Array.isArray(value)) return "";
+
+  return value
+    .map((button) => {
+      if (!button || typeof button !== "object") return null;
+      const label = typeof (button as { label?: unknown }).label === "string" ? (button as { label: string }).label : "";
+      const href = typeof (button as { href?: unknown }).href === "string" ? (button as { href: string }).href : "";
+      return `${label}|${href}`;
+    })
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
 }
 
 export default function PageEditorClient({ slug }: Props) {
@@ -59,8 +91,15 @@ export default function PageEditorClient({ slug }: Props) {
     void loadLayout();
   }, [loadLayout]);
 
-  function updateSelectedSetting(key: string, value: string | number | boolean) {
+  function updateSelectedSetting(field: SettingsFieldDefinition, rawValue: string | number | boolean) {
     if (!selectedSection) return;
+
+    const value =
+      field.key === "buttons" && typeof rawValue === "string"
+        ? parseButtonsInput(rawValue)
+        : field.kind === "number" && typeof rawValue === "string"
+          ? (rawValue ? Number(rawValue) : 0)
+          : rawValue;
 
     setLayout((current) => ({
       ...current,
@@ -70,7 +109,7 @@ export default function PageEditorClient({ slug }: Props) {
               ...section,
               settings: {
                 ...(section.settings as Record<string, unknown>),
-                [key]: value
+                [field.key]: value
               }
             }
           : section
@@ -162,7 +201,7 @@ export default function PageEditorClient({ slug }: Props) {
             >
               <button type="button" className="w-full text-left" onClick={() => setSelectedId(section.id)}>
                 <span className="mr-2 text-slate-400">⠿</span>
-                {index + 1}. {sectionRegistry[section.type].label}
+                {index + 1}. {sectionRegistry[section.type].label} {section.hidden ? "(Hidden)" : ""}
               </button>
               <div className="mt-2 flex gap-2">
                 <button type="button" className="rounded border px-2 py-0.5" onClick={() => duplicateSection(section.id)}>Duplicate</button>
@@ -213,10 +252,10 @@ export default function PageEditorClient({ slug }: Props) {
                   <label key={field.key} className="block text-xs">
                     <span className="mb-1 block font-medium text-slate-700">{field.label}</span>
                     <textarea
-                      value={typeof value === "string" ? value : ""}
-                      onChange={(event) => updateSelectedSetting(field.key, event.target.value)}
+                      value={field.key === "buttons" ? formatButtonsInput(value) : typeof value === "string" ? value : ""}
+                      onChange={(event) => updateSelectedSetting(field, event.target.value)}
                       className="w-full rounded border border-slate-300 p-2"
-                      rows={4}
+                      rows={field.key === "buttons" ? 5 : 4}
                     />
                   </label>
                 );
@@ -228,9 +267,28 @@ export default function PageEditorClient({ slug }: Props) {
                     <input
                       type="checkbox"
                       checked={Boolean(value)}
-                      onChange={(event) => updateSelectedSetting(field.key, event.target.checked)}
+                      onChange={(event) => updateSelectedSetting(field, event.target.checked)}
                     />
                     {field.label}
+                  </label>
+                );
+              }
+
+              if (field.kind === "select") {
+                return (
+                  <label key={field.key} className="block text-xs">
+                    <span className="mb-1 block font-medium text-slate-700">{field.label}</span>
+                    <select
+                      value={typeof value === "string" ? value : ""}
+                      onChange={(event) => updateSelectedSetting(field, event.target.value)}
+                      className="w-full rounded border border-slate-300 px-2 py-1"
+                    >
+                      {(field.options ?? []).map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                 );
               }
@@ -240,14 +298,11 @@ export default function PageEditorClient({ slug }: Props) {
                   <span className="mb-1 block font-medium text-slate-700">{field.label}</span>
                   <input
                     type={field.kind === "number" ? "number" : field.kind === "url" ? "url" : "text"}
+                    min={field.min}
+                    max={field.max}
+                    step={field.step}
                     value={typeof value === "number" ? String(value) : typeof value === "string" ? value : ""}
-                    onChange={(event) => {
-                      const nextValue =
-                        field.kind === "number" && event.target.value
-                          ? Number(event.target.value)
-                          : event.target.value;
-                      updateSelectedSetting(field.key, nextValue);
-                    }}
+                    onChange={(event) => updateSelectedSetting(field, event.target.value)}
                     className="w-full rounded border border-slate-300 px-2 py-1"
                   />
                 </label>
