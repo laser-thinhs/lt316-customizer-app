@@ -5,11 +5,15 @@ import { richTextSection } from "@/sections/rich-text";
 import { SectionDefinition } from "@/sections/types";
 import { SectionType } from "@/lib/page-layout/types";
 
-const sectionRegistry: Record<SectionType, SectionDefinition<any>> = {
-  hero: heroSection,
-  "rich-text": richTextSection,
-  "image-text": imageTextSection,
-  "button-row": buttonRowSection
+function asUnknownSection<TSettings>(definition: SectionDefinition<TSettings>): SectionDefinition<unknown> {
+  return definition as unknown as SectionDefinition<unknown>;
+}
+
+const sectionRegistry: Record<SectionType, SectionDefinition<unknown>> = {
+  hero: asUnknownSection(heroSection),
+  "rich-text": asUnknownSection(richTextSection),
+  "image-text": asUnknownSection(imageTextSection),
+  "button-row": asUnknownSection(buttonRowSection)
 };
 
 export function getSectionDefinition(type: SectionType) {
