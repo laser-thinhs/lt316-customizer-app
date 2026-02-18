@@ -8,8 +8,13 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from PIL import Image
 
+from app.routes.codegen import router as codegen_router
+
+
 app = FastAPI(title="LT316 Python Trace Service")
 logger = logging.getLogger("py-api")
+
+app.include_router(codegen_router)
 
 
 @app.get("/health")

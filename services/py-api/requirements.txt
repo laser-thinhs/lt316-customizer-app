@@ -3,3 +3,4 @@ uvicorn[standard]
 python-multipart
 pillow
 vtracer
+pytest>=8.0.0
