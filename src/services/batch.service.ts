@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { AppError } from "@/lib/errors";
 import { createBatchSchema } from "@/schemas/batch";
 import { parseCsv, toErrorCsv } from "@/lib/csv";

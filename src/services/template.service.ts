@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { AppError } from "@/lib/errors";
 import { fingerprint } from "@/lib/canonical";
 import { applyTemplateSchema, createTemplateSchema, patchTemplateSchema } from "@/schemas/template";
