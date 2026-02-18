@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
+    "dev:up": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-up.ps1",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "node scripts/lint.mjs",
