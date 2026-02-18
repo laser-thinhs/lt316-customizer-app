@@ -83,7 +83,7 @@ export default function WrapCanvas(props: WrapCanvasProps) {
 
       const minMm = 0.1;
       const aspect = Math.max(drag.object.widthMm / Math.max(drag.object.heightMm, minMm), minMm);
-      let next = {
+      const next = {
         xMm: drag.object.xMm,
         yMm: drag.object.yMm,
         widthMm: drag.object.widthMm,

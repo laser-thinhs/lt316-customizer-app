@@ -273,6 +273,11 @@ PLACEMENT_ROUNDING_MM="0.001"
 
 # Asset storage location
 STORAGE_ROOT="./storage"
+
+# API auth hardening (disabled by default)
+API_AUTH_REQUIRED="false"
+API_AUTH_REQUIRED_IN_TEST="false"
+API_KEY=""
 ```
 
 ## Development Workflow

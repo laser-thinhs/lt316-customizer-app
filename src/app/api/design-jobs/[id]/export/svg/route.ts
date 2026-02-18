@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDesignJobById } from "@/services/design-job.service";
 import { fail } from "@/lib/response";
+import { requireApiRole } from "@/lib/api-auth";
 import { PlacementObject } from "@/schemas/placement";
 
 type Params = { params: Promise<{ id: string }> };
@@ -89,6 +90,7 @@ function objectToSvg(object: PlacementObject, translateX = 0): string {
 
 export async function POST(request: Request, { params }: Params) {
   try {
+    requireApiRole(request, ["admin", "operator"]);
     const { id } = await params;
     const job = await getDesignJobById(id);
     const includeGuides = new URL(request.url).searchParams.get("guides") === "1";

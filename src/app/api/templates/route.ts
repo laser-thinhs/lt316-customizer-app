@@ -1,8 +1,10 @@
 import { fail, ok } from "@/lib/response";
+import { requireApiRole } from "@/lib/api-auth";
 import { createTemplate, listTemplates } from "@/services/template.service";
 
 export async function POST(request: Request) {
   try {
+    requireApiRole(request, ["admin", "operator"]);
     return ok(await createTemplate(await request.json()), 201);
   } catch (error) {
     return fail(error);

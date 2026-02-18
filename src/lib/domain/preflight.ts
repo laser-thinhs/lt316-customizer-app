@@ -66,7 +66,8 @@ function objectStrokeWidth(object: PlacementObject): number | undefined {
   return "strokeWidthMm" in object ? object.strokeWidthMm : undefined;
 }
 
-export function runPreflight(placement: PlacementDocument, _productProfile: ProductProfileLike): PreflightResult {
+export function runPreflight(placement: PlacementDocument, productProfile: ProductProfileLike): PreflightResult {
+  void productProfile;
   const errors: PreflightIssue[] = [];
   const warnings: PreflightIssue[] = [];
 

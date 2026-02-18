@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { usePlacementStore, selectPlacementDerived } from "@/store/placementStore";
 import type { PlacementInput } from "@/schemas/placement";
 import { circumferenceMm } from "@/lib/geometry/cylinder";
@@ -309,7 +310,14 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
             <div className="grid max-h-72 grid-cols-2 gap-2 overflow-auto pr-1">
               {filteredAssets.map((asset) => (
                 <article key={asset.id} className="rounded border p-2 text-xs">
-                  <img src={asset.url} alt={asset.filename} className="mb-2 h-20 w-full rounded object-cover" />
+                  <Image
+                    src={asset.url}
+                    alt={asset.filename}
+                    width={320}
+                    height={80}
+                    unoptimized
+                    className="mb-2 h-20 w-full rounded object-cover"
+                  />
                   <input
                     defaultValue={asset.filename}
                     className="mb-1 w-full rounded border px-1 py-0.5"
@@ -338,7 +346,14 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
             <p className="mb-1 font-medium">Selected preview</p>
             {activeAsset ? (
               <>
-                <img src={activeAsset.url} alt={activeAsset.filename} className="mb-2 h-28 w-full rounded object-contain" />
+                <Image
+                  src={activeAsset.url}
+                  alt={activeAsset.filename}
+                  width={320}
+                  height={112}
+                  unoptimized
+                  className="mb-2 h-28 w-full rounded object-contain"
+                />
                 <p className="break-all font-medium">{activeAsset.filename}</p>
                 <p className="text-slate-600">{activeAsset.widthPx ?? "?"} × {activeAsset.heightPx ?? "?"} px</p>
                 <p className="text-slate-600">{formatBytes(activeAsset.bytes)}</p>

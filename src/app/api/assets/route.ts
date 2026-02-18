@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { fail, ok } from "@/lib/response";
 import { AppError } from "@/lib/errors";
+import { requireApiRole } from "@/lib/api-auth";
 import { createAssetFromUpload, listAssetsByJobId } from "@/services/asset.service";
 
 const uploadFormSchema = z.object({
@@ -28,6 +29,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    requireApiRole(request, ["admin", "operator"]);
     const form = await request.formData();
     const file = form.get("file");
     const parsed = uploadFormSchema.safeParse({ designJobId: form.get("designJobId") });

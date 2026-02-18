@@ -1,8 +1,4 @@
-import os from "node:os";
-import path from "node:path";
-import { promises as fs } from "node:fs";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import JSZip from "jszip";
 import sharp from "sharp";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/errors";
@@ -11,8 +7,6 @@ import { createTracerAsset, readTracerAsset } from "@/lib/tracer-asset-store";
 import { defaultTemplateId, getTemplateById } from "@/lib/templates";
 import { mmToPx } from "@/lib/units";
 import { ProofPlacement, ProofRenderRequest, proofUiSettingsSchema } from "@/schemas/proof";
-
-const execFileAsync = promisify(execFile);
 
 function stripSvgWrapper(svg: string) {
   return svg
@@ -233,22 +227,20 @@ export async function exportProofPackage(jobId: string) {
   const rawSvg = svgAsset.buffer.toString("utf8");
   const proof = await renderProofForJob(jobId, false);
   const productionSvg = buildProductionSvg({ rawSvg, templateId, placementMm, dpi });
+  const readme = `Production package for ${job.id}\nTemplate: ${template.name}\nTemplate dimensions: ${template.wrapWidthMm}mm x ${template.wrapHeightMm}mm\nDPI: ${dpi}\nBleed: ${template.bleedMm ?? 0}mm\nSafe area margin: ${template.safeMarginMm ?? 0}mm\n`;
 
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `proof-export-${jobId}-`));
-  const zipPath = path.join(tempDir, "package.zip");
+  const zip = new JSZip();
+  zip.file("production.svg", productionSvg);
+  zip.file("proof.png", proof.png);
+  zip.file("template.json", JSON.stringify(template, null, 2));
+  zip.file("placement.json", JSON.stringify(placementMm, null, 2));
+  zip.file("README.txt", readme);
 
-  await fs.writeFile(path.join(tempDir, "production.svg"), productionSvg, "utf8");
-  await fs.writeFile(path.join(tempDir, "proof.png"), proof.png);
-  await fs.writeFile(path.join(tempDir, "template.json"), JSON.stringify(template, null, 2), "utf8");
-  await fs.writeFile(path.join(tempDir, "placement.json"), JSON.stringify(placementMm, null, 2), "utf8");
-  await fs.writeFile(
-    path.join(tempDir, "README.txt"),
-    `Production package for ${job.id}\nTemplate: ${template.name}\nTemplate dimensions: ${template.wrapWidthMm}mm x ${template.wrapHeightMm}mm\nDPI: ${dpi}\nBleed: ${template.bleedMm ?? 0}mm\nSafe area margin: ${template.safeMarginMm ?? 0}mm\n`,
-    "utf8"
-  );
-
-  await execFileAsync("zip", ["-j", zipPath, "production.svg", "proof.png", "template.json", "placement.json", "README.txt"], { cwd: tempDir });
-  const zipBuffer = await fs.readFile(zipPath);
+  const zipBuffer = await zip.generateAsync({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+    compressionOptions: { level: 9 }
+  });
   const zipAsset = await createTracerAsset({
     buffer: zipBuffer,
     mimeType: "application/zip",

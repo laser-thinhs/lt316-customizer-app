@@ -27,7 +27,7 @@ function ProofPageClient() {
   const searchParams = useSearchParams();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [svgAssetId, setSvgAssetId] = useState<string>(searchParams.get("svgAssetId") ?? "");
-  const [jobId, setJobId] = useState<string>(searchParams.get("jobId") ?? "");
+  const [jobId] = useState<string>(searchParams.get("jobId") ?? "");
   const [templateId, setTemplateId] = useState<string>(DEFAULT_TEMPLATE);
   const [dpi, setDpi] = useState<number>(proofTemplatePresets[DEFAULT_TEMPLATE].defaultDpi);
   const [lockDpi, setLockDpi] = useState<boolean>(true);

@@ -3,6 +3,7 @@ import { AppError } from "@/lib/errors";
 import { createBatchSchema } from "@/schemas/batch";
 import { parseCsv, toErrorCsv } from "@/lib/csv";
 import { enforcePolicy } from "@/lib/placement-policy";
+import type { TokenDefinition } from "@/lib/vdp";
 import { resolveTokensForObject, validateTokenValues } from "@/lib/vdp";
 import { renderProofImage } from "./proof-renderer.service";
 import { fingerprint } from "@/lib/canonical";
@@ -38,6 +39,13 @@ export async function createBatchRun(rawInput: unknown) {
   const results = [] as Array<{ rowIndex: number; status: "success" | "failed"; error?: string }>;
   const zone = await prisma.productProfile.findUnique({ where: { id: input.productProfileId } });
   if (!zone) throw new AppError("Invalid product profile", 400, "INVALID_PRODUCT_PROFILE");
+  const tokenDefinitions: TokenDefinition[] = template.tokenDefinitions.map((definition) => ({
+    key: definition.key,
+    label: definition.label,
+    required: definition.required,
+    defaultValue: definition.defaultValue,
+    validatorRegex: definition.validatorRegex
+  }));
 
   for (let i = 0; i < parsed.rows.length; i += 1) {
     const row = parsed.rows[i];
@@ -46,7 +54,7 @@ export async function createBatchRun(rawInput: unknown) {
       return acc;
     }, {});
 
-    const validationErrors = validateTokenValues(template.tokenDefinitions as any, mapped);
+    const validationErrors = validateTokenValues(tokenDefinitions, mapped);
     if (validationErrors.length > 0) {
       await prisma.batchRunItem.create({
         data: {
