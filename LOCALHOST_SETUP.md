@@ -11,6 +11,25 @@ This guide provides step-by-step instructions to run the LT316 Proof Builder app
 
 ### Setup Steps
 
+#### Optional: Start full local service stack (Docker)
+
+If you want supporting services running in Docker (Postgres + Python APIs), run:
+
+```bash
+npm run stack:up
+```
+
+This starts:
+- `db` on `5432`
+- `py-api` on `8000`
+- `studio-ai` on `8010`
+
+To stop these services:
+
+```bash
+npm run stack:down
+```
+
 1. **Install Dependencies**
 ```bash
 npm install

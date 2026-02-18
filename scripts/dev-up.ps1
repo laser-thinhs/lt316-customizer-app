@@ -9,18 +9,22 @@ docker compose up -d db | Out-Null
 
 Write-Host "[dev:up] Waiting for DB readiness..."
 $ready = $false
-for ($i = 1; $i -le 30; $i++) {
+for ($i = 1; $i -le 90; $i++) {
   try {
     $probe = docker compose exec -T db pg_isready -U app -d customizer 2>$null
-    if ($LASTEXITCODE -eq 0) {
+    if ($LASTEXITCODE -eq 0 -or ($probe -is [string] -and $probe -match "accepting connections")) {
       $ready = $true
       break
     }
-  } catch {}
+  } catch {
+    # Continue retrying while container is still starting.
+  }
   Start-Sleep -Seconds 1
 }
 
 if (-not $ready) {
+  Write-Host "[dev:up] DB readiness probe failed. Recent db logs:" -ForegroundColor Yellow
+  docker compose logs db --tail 40
   throw "Database did not become ready in time. Run 'docker compose logs db' and retry."
 }
 
