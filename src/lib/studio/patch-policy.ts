@@ -10,7 +10,7 @@ const ALWAYS_FORBIDDEN_PREFIXES = [
   "build/",
   "coverage/",
 ];
-const ALLOWED_PREFIXES = ["src/studio/", "src/components/", "src/app/(studio)/"];
+const ALLOWED_PREFIXES = ["src/studio/", "src/components/", "app/(studio)/", "src/app/(studio)/"];
 
 export type PatchValidation = {
   files: string[];

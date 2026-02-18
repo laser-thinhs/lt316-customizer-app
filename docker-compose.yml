@@ -20,10 +20,32 @@ services:
       TRACER_PROVIDER: ${TRACER_PROVIDER:-local}
       TRACER_SERVICE_URL: ${TRACER_SERVICE_URL:-http://tracer-service:4010}
       TRACER_SERVICE_API_KEY: ${TRACER_SERVICE_API_KEY:-}
+      PY_API_URL: ${PY_API_URL:-http://py-api:8000}
+      STUDIO_AI_URL: ${STUDIO_AI_URL:-http://studio-ai:8010}
     depends_on:
       - db
+      - studio-ai
     ports:
       - '3000:3000'
+
+  py-api:
+    build: ./services/py-api
+    restart: unless-stopped
+    environment:
+      STORAGE_DIR: /storage
+    volumes:
+      - ./storage:/storage
+    ports:
+      - '8000:8000'
+
+  studio-ai:
+    build: ./services/studio-ai
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    ports:
+      - '8010:8010'
 
   tracer-service:
     profiles: ["tracer-remote"]

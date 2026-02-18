@@ -43,6 +43,30 @@ export function assertNoExecutableContent(buffer: Buffer) {
   if (header.startsWith("#!") || header.includes("<script")) {
     throw new AppError("Executable content is not allowed", 400, "UNSAFE_CONTENT");
   }
+
+  // For SVG specifically, check for dangerous attributes during upload
+  if (buffer.toString("utf8").match(/<svg/i)) {
+    const content = buffer.toString("utf8", 0, Math.min(buffer.length, 50000)).toLowerCase();
+    const dangerousPatterns = [
+      /on[a-z]+\s*=/i,           // Event handlers
+      /javascript:/i,             // JavaScript protocol
+      /<script/i,                 // Script tags
+      /<iframe/i,                 // Iframe tags
+      /<embed/i,                  // Embed tags
+      /<object/i,                 // Object tags
+      /(?:data|src):[^/](?!image)/i  // Non-image data URIs
+    ];
+
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(content)) {
+        throw new AppError(
+          "SVG contains potentially dangerous content (scripts, event handlers, etc.)",
+          400,
+          "UNSAFE_SVG_CONTENT"
+        );
+      }
+    }
+  }
 }
 
 export function detectMime(buffer: Buffer, ext: string): UploadMime | null {
@@ -150,8 +174,19 @@ export function extractImageDimensions(buffer: Buffer, mimeType: UploadMime): Im
 
 export function normalizeSvg(source: string): string {
   return source
+    // Remove script tags and their content entirely
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    // Remove inline event handlers with or without quotes
     .replace(/on[a-z]+\s*=\s*"[^"]*"/gi, "")
     .replace(/on[a-z]+\s*=\s*'[^']*'/gi, "")
+    .replace(/on[a-z]+\s*=\s*[^\s>]*/gi, "")
+    // Remove style tags
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
+    // Remove dangerous attributes in iframes, embeds, and objects
+    .replace(/<(iframe|embed|object|applet)[^>]*>/gi, "")
+    // Remove href/xlink:href with javascript: protocol
+    .replace(/(?:href|xlink:href)\s*=\s*["']?javascript:[^"'>\s]*["']?/gi, "")
+    // Remove data: URIs that aren't data:image/ (potential vectors for execution)
+    .replace(/(?:src|href|xlink:href)\s*=\s*["']?data:(?!image\/)([^"'>\s])*["']?/gi, "")
     .trim();
 }

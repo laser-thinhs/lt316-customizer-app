@@ -5,6 +5,7 @@ import { fingerprint } from "@/lib/canonical";
 import { applyTemplateSchema, createTemplateSchema, patchTemplateSchema } from "@/schemas/template";
 import { logAudit } from "./audit.service";
 import { remapDocumentToProfile } from "@/lib/placement-policy";
+import type { Prisma } from "@prisma/client";
 
 export async function createTemplate(rawInput: unknown) {
   const input = createTemplateSchema.parse(rawInput);

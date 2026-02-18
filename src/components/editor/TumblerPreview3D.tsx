@@ -7,6 +7,7 @@ type Props = {
   heightMm?: number | null;
   designSvgUrl?: string;
   rotationDeg?: number | null;
+  onRotationDegChange?: (nextRotation: number) => void;
   offsetYMm?: number | null;
   engraveZoneHeightMm?: number | null;
 };
@@ -16,6 +17,7 @@ export default function TumblerPreview3D({
   heightMm = 100,
   designSvgUrl = "",
   rotationDeg = 0,
+  onRotationDegChange,
   offsetYMm = 0,
   engraveZoneHeightMm = 100
 }: Props) {
@@ -140,7 +142,6 @@ export default function TumblerPreview3D({
         let animationId: number;
         const animate = () => {
           animationId = requestAnimationFrame(animate);
-          cylinder.rotation.y += 0.005;
           renderer.render(scene, camera);
         };
         animate();
@@ -179,11 +180,40 @@ export default function TumblerPreview3D({
     };
   }, [diameterMm, heightMm, designSvgUrl, rotationDeg, offsetYMm, engraveZoneHeightMm]);
 
+  const rotateBy = (deltaDeg: number) => {
+    const normalized = ((((rotationDeg ?? 0) + deltaDeg) % 360) + 360) % 360;
+    onRotationDegChange?.(Number(normalized.toFixed(2)));
+  };
+
   return (
-    <div
-      ref={containerRef}
-      className="relative h-full w-full rounded bg-slate-900"
-      style={{ minHeight: "420px" }}
-    />
+    <div className="relative h-full w-full" style={{ minHeight: "420px" }}>
+      <div
+        ref={containerRef}
+        className="h-full w-full rounded bg-slate-900"
+        style={{ minHeight: "420px" }}
+      />
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-3 flex items-center justify-center">
+        <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-slate-950/80 px-3 py-2 text-white shadow">
+          <button
+            type="button"
+            onClick={() => rotateBy(-15)}
+            className="rounded-full border border-white/30 px-2 py-1 text-sm leading-none hover:bg-white/10"
+            aria-label="Rotate model left"
+          >
+            ←
+          </button>
+          <span className="min-w-16 text-center text-xs tabular-nums">{(rotationDeg ?? 0).toFixed(1)}°</span>
+          <button
+            type="button"
+            onClick={() => rotateBy(15)}
+            className="rounded-full border border-white/30 px-2 py-1 text-sm leading-none hover:bg-white/10"
+            aria-label="Rotate model right"
+          >
+            →
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

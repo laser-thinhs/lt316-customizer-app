@@ -36,7 +36,7 @@ async function loadRepoContext() {
     context.existing_blocks = [];
   }
 
-  context.tree_hint = ["src/studio/blocks", "src/studio/registry.ts", "src/app/(studio)/studio/page.tsx"];
+  context.tree_hint = ["src/studio/blocks", "src/studio/registry.ts", "app/(studio)/studio/page.tsx"];
   return context;
 }
 

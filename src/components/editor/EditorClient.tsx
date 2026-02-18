@@ -431,6 +431,7 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
           diameterMm={profile.diameterMm}
           heightMm={profile.engraveZoneHeightMm}
           rotationDeg={store.placement.rotationDeg}
+          onRotationDegChange={(value) => store.patchPlacement({ rotationDeg: value })}
           offsetYMm={store.placement.offsetYMm}
           engraveZoneHeightMm={profile.engraveZoneHeightMm}
         />
