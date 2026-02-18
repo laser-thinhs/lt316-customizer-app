@@ -58,6 +58,50 @@ class CreateDesignJobRequest(BaseModel):
             raise ValueError(error.message) from error
 
 
+class BatchExportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    designJobIds: list[str] = Field(min_length=1)
+
+    @field_validator("designJobIds")
+    @classmethod
+    def validate_design_job_ids(cls, value: list[str]):
+        normalized: list[str] = []
+        for item in value:
+            trimmed = item.strip()
+            if not trimmed:
+                raise ValueError("String should have at least 1 character")
+            normalized.append(trimmed)
+        return normalized
+
+
+def _validation_error_response(status_code: int, error: ValidationError):
+    issues = json.loads(error.json())
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Invalid request payload",
+                "issues": issues,
+            }
+        },
+    )
+
+
+def _invalid_placement_preflight_result() -> dict[str, Any]:
+    return {
+        "status": "fail",
+        "issues": [
+            {
+                "code": "INVALID_PLACEMENT",
+                "severity": "error",
+                "message": "Placement payload is invalid and cannot be parsed.",
+                "suggestedFix": "Open the job editor and save placement again.",
+            }
+        ],
+    }
+
+
 def _serialize_product_profile(row: ProductProfile | None):
     if not row:
         return None
@@ -179,17 +223,7 @@ def _run_design_job_preflight(
     try:
         placement = parse_placement_document(job.placementJson)
     except AppError:
-        return {
-            "status": "fail",
-            "issues": [
-                {
-                    "code": "INVALID_PLACEMENT",
-                    "severity": "error",
-                    "message": "Placement payload is invalid and cannot be parsed.",
-                    "suggestedFix": "Open the job editor and save placement again.",
-                }
-            ],
-        }
+        return _invalid_placement_preflight_result()
 
     canvas = placement.get("canvas", {}) if isinstance(placement, dict) else {}
     canvas_width = _to_float(canvas.get("widthMm"))
@@ -198,17 +232,7 @@ def _run_design_job_preflight(
     zone_height = _to_float(product.engraveZoneHeightMm)
 
     if canvas_width is None or canvas_height is None:
-        return {
-            "status": "fail",
-            "issues": [
-                {
-                    "code": "INVALID_PLACEMENT",
-                    "severity": "error",
-                    "message": "Placement payload is invalid and cannot be parsed.",
-                    "suggestedFix": "Open the job editor and save placement again.",
-                }
-            ],
-        }
+        return _invalid_placement_preflight_result()
 
     if zone_width is not None and zone_height is not None and (canvas_width > zone_width or canvas_height > zone_height):
         issues.append(
@@ -570,13 +594,70 @@ def _build_export_svg_route_svg(job: DesignJob, include_guides: bool) -> str:
             f'</g>'
         )
 
+    artwork = "\n    ".join(fragments)
+
     return (
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{_round_mm(canvas_width)}mm" height="{_round_mm(canvas_height)}mm" viewBox="0 0 {_round_mm(canvas_width)} {_round_mm(canvas_height)}">\n'
-        f'  <g id="artwork">\n    {'\n    '.join(fragments)}\n  </g>\n'
+        f'  <g id="artwork">\n    {artwork}\n  </g>\n'
         f'  {guides}\n'
         "</svg>"
     )
+
+
+def _export_design_job_payload(db, design_job_id: str) -> dict[str, Any]:
+    job = db.get(DesignJob, design_job_id)
+    if not job:
+        raise AppError("DesignJob not found", 404, "NOT_FOUND")
+
+    product = db.get(ProductProfile, job.productProfileId)
+    machine = db.get(MachineProfile, job.machineProfileId)
+    if not product or not machine:
+        raise AppError("Design job dependencies not found", 404, "NOT_FOUND")
+
+    assets = db.scalars(select(Asset).where(Asset.designJobId == job.id).order_by(Asset.createdAt.asc())).all()
+    preflight = _run_design_job_preflight(job=job, product=product, assets=assets)
+
+    if preflight.get("status") == "fail":
+        raise AppError("Preflight failed", 422, "PREFLIGHT_FAILED", preflight)
+
+    manifest = _build_export_manifest(job=job, product=product, machine=machine, preflight=preflight)
+    svg = _build_export_svg(job=job, product=product)
+
+    now = datetime.now(timezone.utc)
+    db.add(
+        ExportArtifact(
+            id=str(uuid4()),
+            designJobId=job.id,
+            kind="manifest",
+            version="1.0",
+            preflightStatus=preflight.get("status", "fail"),
+            payloadJson=manifest,
+            textContent=None,
+            createdAt=now,
+        )
+    )
+    db.add(
+        ExportArtifact(
+            id=str(uuid4()),
+            designJobId=job.id,
+            kind="svg",
+            version="1.0",
+            preflightStatus=preflight.get("status", "fail"),
+            payloadJson=None,
+            textContent=svg,
+            createdAt=now,
+        )
+    )
+
+    return {
+        "manifest": manifest,
+        "svg": svg,
+        "metadata": {
+            "preflightStatus": preflight.get("status", "fail"),
+            "issueCount": len(preflight.get("issues", [])),
+        },
+    }
 
 
 @router.get("/design-jobs/{id}")
@@ -641,17 +722,7 @@ async def create_design_job(request: Request):
     try:
         payload = CreateDesignJobRequest.model_validate(await request.json())
     except ValidationError as error:
-        issues = json.loads(error.json())
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": {
-                    "code": "VALIDATION_ERROR",
-                    "message": "Invalid request payload",
-                    "issues": issues,
-                }
-            },
-        )
+        return _validation_error_response(400, error)
 
     with SessionLocal() as db:
         product = db.get(ProductProfile, payload.productProfileId)
@@ -712,17 +783,7 @@ async def patch_design_job_placement(id: str, request: Request):
     try:
         payload = UpdatePlacementRequest.model_validate(await request.json())
     except ValidationError as error:
-        issues = json.loads(error.json())
-        return JSONResponse(
-            status_code=422,
-            content={
-                "error": {
-                    "code": "VALIDATION_ERROR",
-                    "message": "Invalid request payload",
-                    "issues": issues,
-                }
-            },
-        )
+        return _validation_error_response(422, error)
 
     with SessionLocal() as db:
         job = db.get(DesignJob, id)
@@ -785,60 +846,11 @@ def preflight_design_job(id: str):
 @router.post("/design-jobs/{id}/export", dependencies=[Depends(require_api_role)])
 def export_design_job(id: str):
     with SessionLocal() as db:
-        job = db.get(DesignJob, id)
-        if not job:
-            raise AppError("DesignJob not found", 404, "NOT_FOUND")
-
-        product = db.get(ProductProfile, job.productProfileId)
-        machine = db.get(MachineProfile, job.machineProfileId)
-        if not product or not machine:
-            raise AppError("Design job dependencies not found", 404, "NOT_FOUND")
-
-        assets = db.scalars(select(Asset).where(Asset.designJobId == job.id).order_by(Asset.createdAt.asc())).all()
-        preflight = _run_design_job_preflight(job=job, product=product, assets=assets)
-
-        if preflight.get("status") == "fail":
-            raise AppError("Preflight failed", 422, "PREFLIGHT_FAILED", preflight)
-
-        manifest = _build_export_manifest(job=job, product=product, machine=machine, preflight=preflight)
-        svg = _build_export_svg(job=job, product=product)
-
-        now = datetime.now(timezone.utc)
-        db.add(
-            ExportArtifact(
-                id=str(uuid4()),
-                designJobId=job.id,
-                kind="manifest",
-                version="1.0",
-                preflightStatus=preflight.get("status", "fail"),
-                payloadJson=manifest,
-                textContent=None,
-                createdAt=now,
-            )
-        )
-        db.add(
-            ExportArtifact(
-                id=str(uuid4()),
-                designJobId=job.id,
-                kind="svg",
-                version="1.0",
-                preflightStatus=preflight.get("status", "fail"),
-                payloadJson=None,
-                textContent=svg,
-                createdAt=now,
-            )
-        )
+        export_payload = _export_design_job_payload(db, id)
         db.commit()
 
     return {
-        "data": {
-            "manifest": manifest,
-            "svg": svg,
-            "metadata": {
-                "preflightStatus": preflight.get("status", "fail"),
-                "issueCount": len(preflight.get("issues", [])),
-            },
-        }
+        "data": export_payload
     }
 
 
@@ -859,3 +871,52 @@ def export_design_job_svg(id: str, request: Request):
             "Content-Disposition": f'attachment; filename="job-{id}.svg"',
         },
     )
+
+
+@router.post("/design-jobs/export-batch", dependencies=[Depends(require_api_role)])
+async def export_design_jobs_batch(request: Request):
+    try:
+        payload = BatchExportRequest.model_validate(await request.json())
+    except ValidationError as error:
+        return _validation_error_response(400, error)
+
+    results: list[dict[str, Any]] = []
+    with SessionLocal() as db:
+        for design_job_id in payload.designJobIds:
+            try:
+                artifacts = _export_design_job_payload(db, design_job_id)
+                db.commit()
+                results.append({"designJobId": design_job_id, "success": True, "artifacts": artifacts})
+            except AppError as error:
+                db.rollback()
+                if error.code == "PREFLIGHT_FAILED":
+                    details = error.details if isinstance(error.details, dict) else {}
+                    issues = details.get("issues", []) if isinstance(details, dict) else []
+                    results.append(
+                        {
+                            "designJobId": design_job_id,
+                            "success": False,
+                            "reason": error.message,
+                            "issues": issues,
+                        }
+                    )
+                else:
+                    results.append(
+                        {
+                            "designJobId": design_job_id,
+                            "success": False,
+                            "reason": error.message,
+                        }
+                    )
+            except Exception as error:
+                db.rollback()
+                message = str(error) if isinstance(error, Exception) else "Unknown export error"
+                results.append(
+                    {
+                        "designJobId": design_job_id,
+                        "success": False,
+                        "reason": message,
+                    }
+                )
+
+    return {"data": {"results": results}}
