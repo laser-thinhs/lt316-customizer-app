@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   ImagePlacementObject,
   PlacementDocument,
@@ -38,6 +39,10 @@ type ApiAsset = {
 };
 
 const curatedFonts = ["Inter", "Roboto Mono"];
+
+const TumblerPreview3D = dynamic(() => import("@/components/editor/TumblerPreview3D"), {
+  ssr: false
+});
 
 type TransformField = "xMm" | "yMm" | "widthMm" | "heightMm" | "rotationDeg";
 type TransformValues = Record<TransformField, string>;
@@ -145,6 +150,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const [showCenterlines, setShowCenterlines] = useState(true);
   const [showSafeMargin, setShowSafeMargin] = useState(true);
   const [keepAspectResize, setKeepAspectResize] = useState(true);
+  const canRender3DPreview = process.env.NODE_ENV !== "test";
 
   const copyText = async (value: string, label: string) => {
     try {
@@ -213,6 +219,15 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
       };
     });
   }, [doc.objects]);
+
+  const previewAssetUrl = useMemo(() => {
+    if (isImageObject(selected)) {
+      return `/api/assets/${selected.assetId}`;
+    }
+
+    const firstImage = doc.objects.find((entry) => entry.kind === "image");
+    return firstImage ? `/api/assets/${firstImage.assetId}` : "";
+  }, [doc.objects, selected]);
 
   const commitDoc = (next: PlacementDocument) => {
     setUndoStack((prev) => [...prev.slice(-29), doc]);
@@ -730,6 +745,23 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
         />
         <p className="text-xs text-slate-600">Drag to move. Shift-drag locks axis. Arrow keys nudge 1mm (Shift = 5mm).</p>
       </section>
+
+      {canRender3DPreview ? (
+        <section className="space-y-3 rounded border border-slate-200 bg-slate-50 p-3">
+          <h3 className="text-sm font-semibold">3D Preview</h3>
+          <div className="h-[420px] overflow-hidden rounded border border-slate-200 bg-slate-900">
+            <TumblerPreview3D
+              diameterMm={doc.canvas.widthMm / Math.PI}
+              heightMm={doc.canvas.heightMm}
+              designSvgUrl={previewAssetUrl}
+              rotationDeg={selected?.rotationDeg ?? 0}
+              offsetYMm={isImageObject(selected) ? selected.yMm : isTextObject(selected) ? selected.offsetYMm : 0}
+              engraveZoneHeightMm={doc.canvas.heightMm}
+            />
+          </div>
+          <p className="text-xs text-slate-600">Uses selected artwork when available; otherwise first uploaded image.</p>
+        </section>
+      ) : null}
 
       {isImageObject(selected) ? (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

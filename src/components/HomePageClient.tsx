@@ -111,7 +111,7 @@ export default function HomePageClient() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-xl px-4 py-6 sm:py-10">
+    <main className="mx-auto w-full max-w-screen-2xl px-4 py-6 sm:py-10">
       <div className="space-y-6">
         <header className="space-y-1">
           <h1 className="text-xl font-bold tracking-tight">LT316 Proof Builder</h1>
