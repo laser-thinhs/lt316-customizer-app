@@ -55,8 +55,8 @@ export function enforcePolicy(document: unknown, zone: { widthMm: number; height
     const scale = Math.min(zone.widthMm / Math.max(width, 1), zone.heightMm / Math.max(height, 1), 1);
     obj.widthMm = width * scale;
     obj.heightMm = height * scale;
-    obj.xMm = Math.max(0, Math.min(x, zone.widthMm - obj.widthMm));
-    obj.yMm = Math.max(0, Math.min(y, zone.heightMm - obj.heightMm));
+    obj.xMm = Math.max(0, Math.min(x, zone.widthMm - (obj.widthMm as number)));
+    obj.yMm = Math.max(0, Math.min(y, zone.heightMm - (obj.heightMm as number)));
     warnings.push(`Scaled object ${obj.id ?? "unknown"} by ${scale.toFixed(3)}`);
   }
 
