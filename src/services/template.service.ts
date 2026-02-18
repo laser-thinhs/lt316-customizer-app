@@ -100,7 +100,7 @@ export async function applyTemplate(id: string, rawInput: unknown) {
   const job = await prisma.designJob.update({
     where: { id: input.designJobId },
     data: {
-      placementJson: placementDocument,
+      placementJson: placementDocument as any,
       templateId: id,
       placementHash: fingerprint(placementDocument)
     }

@@ -111,7 +111,7 @@ export async function createBatchRun(rawInput: unknown) {
         productProfileId: input.productProfileId,
         machineProfileId: "fiber-galvo-300-lens-default",
         status: "draft",
-        placementJson: policyResult.document,
+        placementJson: policyResult.document as any,
         proofImagePath: rendered.imagePath,
         placementHash: fingerprint(policyResult.document),
         templateId: template.id,
