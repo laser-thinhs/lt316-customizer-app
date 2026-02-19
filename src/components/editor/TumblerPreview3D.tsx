@@ -1,25 +1,34 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { buildCylinderTexture, sanitizePlacement, type ArtworkPlacement } from "./artworkTexture";
 
 type Props = {
   diameterMm?: number | null;
   heightMm?: number | null;
   designSvgUrl?: string;
+  artworkMime?: string;
+  artworkPlacement?: Partial<ArtworkPlacement>;
   rotationDeg?: number | null;
   onRotationDegChange?: (nextRotation: number) => void;
   offsetYMm?: number | null;
   engraveZoneHeightMm?: number | null;
+  onTextureErrorChange?: (message: string | null) => void;
+  textureReloadKey?: number;
 };
 
 export default function TumblerPreview3D({
   diameterMm = 76.2,
   heightMm = 100,
   designSvgUrl = "",
+  artworkMime = "",
+  artworkPlacement,
   rotationDeg = 0,
   onRotationDegChange,
   offsetYMm = 0,
-  engraveZoneHeightMm = 100
+  engraveZoneHeightMm = 100,
+  onTextureErrorChange,
+  textureReloadKey = 0
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -63,25 +72,26 @@ export default function TumblerPreview3D({
         const cylinderHeight = heightMm ?? 100;
         const geometry = new THREE.CylinderGeometry(radius, radius, cylinderHeight, 64, 32);
 
-        // Canvas texture
         const canvas = document.createElement("canvas");
-        canvas.width = 512;
-        canvas.height = 512;
+        canvas.width = 1024;
+        canvas.height = 1024;
         const ctx = canvas.getContext("2d");
-        if (ctx) {
-          const gradient = ctx.createLinearGradient(0, 0, 512, 512);
+        const gradient = ctx?.createLinearGradient(0, 0, 1024, 1024);
+        if (ctx && gradient) {
           gradient.addColorStop(0, "#2d3e50");
           gradient.addColorStop(1, "#34495e");
           ctx.fillStyle = gradient;
-          ctx.fillRect(0, 0, 512, 512);
+          ctx.fillRect(0, 0, 1024, 1024);
 
-          ctx.fillStyle = "#ecf0f1";
-          ctx.font = "bold 24px Arial";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText("Design Here", 256, 226);
-          ctx.font = "14px Arial";
-          ctx.fillText("(Upload artwork to preview)", 256, 276);
+          if (!designSvgUrl) {
+            ctx.fillStyle = "#ecf0f1";
+            ctx.font = "bold 28px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText("Design Here", 512, 486);
+            ctx.font = "16px Arial";
+            ctx.fillText("(Upload artwork to preview)", 512, 530);
+          }
         }
 
         const texture = new THREE.CanvasTexture(canvas);
@@ -119,11 +129,27 @@ export default function TumblerPreview3D({
 
         fitCamera();
 
-        if (ctx && designSvgUrl) {
-          ctx.fillStyle = "#22c55e";
-          ctx.font = "12px Arial";
-          ctx.fillText(`Artwork: ${designSvgUrl.split("/").pop() ?? "linked"}`, 256, 308);
-          texture.needsUpdate = true;
+        onTextureErrorChange?.(null);
+        if (designSvgUrl && artworkMime) {
+          void buildCylinderTexture({
+            THREE,
+            artworkUrl: designSvgUrl,
+            artworkMime,
+            placement: sanitizePlacement(artworkPlacement)
+          }).then((nextTexture) => {
+            if (disposed) {
+              nextTexture.dispose();
+              return;
+            }
+            material.map?.dispose();
+            material.map = nextTexture;
+            material.transparent = true;
+            material.needsUpdate = true;
+            onTextureErrorChange?.(null);
+          }).catch((error) => {
+            const message = error instanceof Error ? error.message : "Texture load failed.";
+            onTextureErrorChange?.(message);
+          });
         }
 
         if (ctx && Number.isFinite(engraveZoneHeightMm)) {
@@ -178,7 +204,7 @@ export default function TumblerPreview3D({
       disposed = true;
       cleanup?.();
     };
-  }, [diameterMm, heightMm, designSvgUrl, rotationDeg, offsetYMm, engraveZoneHeightMm]);
+  }, [diameterMm, heightMm, designSvgUrl, artworkMime, artworkPlacement, rotationDeg, offsetYMm, engraveZoneHeightMm, onTextureErrorChange, textureReloadKey]);
 
   const rotateBy = (deltaDeg: number) => {
     const normalized = ((((rotationDeg ?? 0) + deltaDeg) % 360) + 360) % 360;

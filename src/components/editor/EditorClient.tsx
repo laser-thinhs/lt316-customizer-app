@@ -6,6 +6,7 @@ import Image from "next/image";
 import { usePlacementStore, selectPlacementDerived } from "@/store/placementStore";
 import type { PlacementInput } from "@/schemas/placement";
 import { circumferenceMm } from "@/lib/geometry/cylinder";
+import { sanitizePlacement, type ArtworkPlacement } from "./artworkTexture";
 
 const TumblerPreview3D = dynamic(() => import("./TumblerPreview3D"), { ssr: false });
 
@@ -108,6 +109,15 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
   const [sortBy, setSortBy] = useState<"recent" | "oldest" | "name">("recent");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [artworkError, setArtworkError] = useState<string | null>(null);
+  const [textureReloadKey, setTextureReloadKey] = useState(0);
+  const [artworkPlacement, setArtworkPlacement] = useState<ArtworkPlacement>(() => sanitizePlacement({
+    scale: 1,
+    rotationDeg: 0,
+    offsetX: 0.5,
+    offsetY: 0.5,
+    fitMode: "manual"
+  }));
 
   const autosaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -172,8 +182,8 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
   };
 
   const validateFile = (file: File) => {
-    const allowed = new Set(["image/png", "image/jpeg", "image/webp"]);
-    if (!allowed.has(file.type)) return "Please upload png, jpg, jpeg, or webp images.";
+    const allowed = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
+    if (!allowed.has(file.type)) return "Please upload SVG, PNG, JPG, JPEG, or WEBP images.";
     if (file.size > 10 * 1024 * 1024) return "File is larger than 10MB. Please use a smaller image.";
     return null;
   };
@@ -274,14 +284,14 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
           }}
         >
           <p className="text-sm text-slate-700">Drag and drop artwork images here</p>
-          <p className="mt-1 text-xs text-slate-500">PNG / JPG / JPEG / WEBP, up to 10MB each.</p>
+          <p className="mt-1 text-xs text-slate-500">SVG / PNG / JPG / JPEG / WEBP, up to 10MB each.</p>
           <button className="mt-3 rounded bg-slate-900 px-3 py-1 text-xs text-white" onClick={() => fileInputRef.current?.click()}>Upload</button>
           <input
             ref={fileInputRef}
             type="file"
             className="hidden"
             multiple
-            accept=".png,.jpg,.jpeg,.webp"
+            accept=".svg,.png,.jpg,.jpeg,.webp"
             onChange={(e) => e.target.files && void uploadFiles(e.target.files)}
           />
           {uploadProgress !== null ? (
@@ -432,10 +442,34 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
           heightMm={profile.engraveZoneHeightMm}
           rotationDeg={store.placement.rotationDeg}
           onRotationDegChange={(value) => store.patchPlacement({ rotationDeg: value })}
+          designSvgUrl={activeAsset?.url ?? ""}
+          artworkMime={activeAsset?.mime ?? ""}
+          artworkPlacement={artworkPlacement}
+          textureReloadKey={textureReloadKey}
           offsetYMm={store.placement.offsetYMm}
           engraveZoneHeightMm={profile.engraveZoneHeightMm}
+          onTextureErrorChange={setArtworkError}
         />
         <p className="mt-2 text-xs text-slate-600">Asset: {activeAsset?.id ?? "none"}</p>
+        <div className="mt-3 space-y-2 rounded border bg-slate-50 p-2 text-xs">
+          <p className="font-semibold">Artwork placement</p>
+          <label className="block">Scale ({artworkPlacement.scale.toFixed(2)})
+            <input type="range" min={0.1} max={5} step={0.05} value={artworkPlacement.scale} onChange={(e) => setArtworkPlacement((prev) => sanitizePlacement({ ...prev, scale: Number(e.target.value), fitMode: "manual" }))} className="w-full" />
+          </label>
+          <label className="block">Rotation ({artworkPlacement.rotationDeg.toFixed(0)}°)
+            <input type="range" min={-180} max={180} step={1} value={artworkPlacement.rotationDeg} onChange={(e) => setArtworkPlacement((prev) => sanitizePlacement({ ...prev, rotationDeg: Number(e.target.value) }))} className="w-full" />
+          </label>
+          <label className="block">Horizontal offset ({artworkPlacement.offsetX.toFixed(2)})
+            <input type="range" min={0} max={1} step={0.01} value={artworkPlacement.offsetX} onChange={(e) => setArtworkPlacement((prev) => sanitizePlacement({ ...prev, offsetX: Number(e.target.value) }))} className="w-full" />
+          </label>
+          <label className="block">Vertical offset ({artworkPlacement.offsetY.toFixed(2)})
+            <input type="range" min={0} max={1} step={0.01} value={artworkPlacement.offsetY} onChange={(e) => setArtworkPlacement((prev) => sanitizePlacement({ ...prev, offsetY: Number(e.target.value) }))} className="w-full" />
+          </label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={artworkPlacement.fitMode === "contain"} onChange={(e) => setArtworkPlacement((prev) => sanitizePlacement({ ...prev, fitMode: e.target.checked ? "contain" : "manual" }))} /> Fit to cylinder width</label>
+          <button type="button" className="rounded border px-2 py-1" onClick={() => setArtworkPlacement(sanitizePlacement({ scale: 1, rotationDeg: 0, offsetX: 0.5, offsetY: 0.5, fitMode: "manual" }))}>Reset placement</button>
+          {!activeAsset ? <p className="text-amber-700">Upload artwork to apply texture.</p> : null}
+          {artworkError ? <p className="text-red-600">{artworkError} <button type="button" className="underline" onClick={() => setTextureReloadKey((current) => current + 1)}>Retry</button></p> : null}
+        </div>
       </section>
 
       <div className="pointer-events-none fixed right-3 top-3 z-50 space-y-2">
