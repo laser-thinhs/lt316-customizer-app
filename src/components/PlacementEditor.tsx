@@ -163,6 +163,8 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const [showCenterlines, setShowCenterlines] = useState(true);
   const [showSafeMargin, setShowSafeMargin] = useState(true);
   const [keepAspectResize, setKeepAspectResize] = useState(true);
+  const canvasPreviewScale = 0.25;
+  const canvasPreviewDpi = Math.max(1, canvasDpi * canvasPreviewScale);
   const [isArtworkDragging, setArtworkDragging] = useState(false);
   const [isUploadingArtwork, setUploadingArtwork] = useState(false);
   const [selectedArtworkFile, setSelectedArtworkFile] = useState<{ name: string; size: number } | null>(null);
@@ -892,7 +894,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
           template={{ widthMm: 300, heightMm: 300, safeMarginMm: 2 }}
           objects={canvasObjects}
           selectedId={selectedObjectId}
-          dpi={canvasDpi}
+          dpi={canvasPreviewDpi}
           gridEnabled={gridEnabled}
           gridSpacingMm={gridSpacingMm}
           showCenterlines={showCenterlines}
