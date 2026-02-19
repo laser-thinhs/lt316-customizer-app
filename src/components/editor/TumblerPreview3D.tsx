@@ -38,7 +38,8 @@ export default function TumblerPreview3D({
     rotationX: 0,
     rotationY: 0,
     targetRotationX: 0,
-    targetRotationY: 0
+    targetRotationY: 0,
+    zoom: 250
   });
 
   // Ensure all values are valid numbers
@@ -57,11 +58,11 @@ export default function TumblerPreview3D({
       scene.background = new THREE.Color(0x1a1a2e);
       sceneRef.current = scene;
 
-      // Camera
+      // Camera - positioned further back for better initial view
       const width = containerRef.current.clientWidth;
       const height = containerRef.current.clientHeight;
-      const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-      camera.position.set(0, 0, 200);
+      const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+      camera.position.set(0, 0, 250);
       camera.lookAt(0, 0, 0);
       cameraRef.current = camera;
 
@@ -74,18 +75,19 @@ export default function TumblerPreview3D({
       rendererRef.current = renderer;
 
       // Lights
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
       scene.add(ambientLight);
 
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
-      directionalLight.position.set(100, 100, 100);
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+      directionalLight.position.set(150, 150, 150);
       directionalLight.castShadow = true;
-      directionalLight.shadow.mapSize.width = 1024;
-      directionalLight.shadow.mapSize.height = 1024;
+      directionalLight.shadow.mapSize.width = 2048;
+      directionalLight.shadow.mapSize.height = 2048;
+      directionalLight.shadow.camera.far = 1000;
       scene.add(directionalLight);
 
-      const pointLight = new THREE.PointLight(0xffffff, 0.4);
-      pointLight.position.set(-100, 50, 100);
+      const pointLight = new THREE.PointLight(0xffffff, 0.5);
+      pointLight.position.set(-150, 100, 150);
       scene.add(pointLight);
 
       // Cylinder geometry
@@ -112,11 +114,11 @@ export default function TumblerPreview3D({
       }
 
       // Ground plane
-      const groundGeometry = new THREE.PlaneGeometry(400, 400);
+      const groundGeometry = new THREE.PlaneGeometry(600, 600);
       const groundMaterial = new THREE.ShadowMaterial({ opacity: 0.3 });
       const ground = new THREE.Mesh(groundGeometry, groundMaterial);
       ground.rotation.x = -Math.PI / 2;
-      ground.position.y = -safeHeightMm / 2 - 10;
+      ground.position.y = -safeHeightMm / 2 - 20;
       ground.receiveShadow = true;
       scene.add(ground);
 
@@ -125,19 +127,17 @@ export default function TumblerPreview3D({
         mouseStateRef.current.isDown = true;
         mouseStateRef.current.startX = e.clientX;
         mouseStateRef.current.startY = e.clientY;
-        if (renderer.domElement.style.cursor !== "grab") {
-          renderer.domElement.style.cursor = "grabbing";
-        }
+        renderer.domElement.style.cursor = "grabbing";
       };
 
       const onMouseMove = (e: MouseEvent) => {
-        if (!mouseStateRef.current.isDown) return;
+        if (!mouseStateRef.current.isDown || !renderer.domElement) return;
 
         const deltaX = e.clientX - mouseStateRef.current.startX;
         const deltaY = e.clientY - mouseStateRef.current.startY;
 
-        mouseStateRef.current.targetRotationY += deltaX * 0.01;
-        mouseStateRef.current.targetRotationX += deltaY * 0.01;
+        mouseStateRef.current.targetRotationY += deltaX * 0.005;
+        mouseStateRef.current.targetRotationX += deltaY * 0.005;
 
         mouseStateRef.current.startX = e.clientX;
         mouseStateRef.current.startY = e.clientY;
@@ -145,24 +145,30 @@ export default function TumblerPreview3D({
 
       const onMouseUp = () => {
         mouseStateRef.current.isDown = false;
-        renderer.domElement.style.cursor = "grab";
+        if (renderer.domElement) {
+          renderer.domElement.style.cursor = "grab";
+        }
       };
 
       const onWheel = (e: WheelEvent) => {
         e.preventDefault();
-        const zoomSpeed = 10;
+        const zoomSpeed = 15;
         const direction = e.deltaY > 0 ? 1 : -1;
-        camera.position.z += direction * zoomSpeed;
-        camera.position.z = Math.max(50, Math.min(500, camera.position.z));
+        mouseStateRef.current.zoom += direction * zoomSpeed;
+        mouseStateRef.current.zoom = Math.max(100, Math.min(600, mouseStateRef.current.zoom));
       };
 
       const onMouseEnter = () => {
-        renderer.domElement.style.cursor = "grab";
+        if (renderer.domElement) {
+          renderer.domElement.style.cursor = "grab";
+        }
       };
 
       const onMouseLeave = () => {
         mouseStateRef.current.isDown = false;
-        renderer.domElement.style.cursor = "default";
+        if (renderer.domElement) {
+          renderer.domElement.style.cursor = "default";
+        }
       };
 
       renderer.domElement.addEventListener("mousedown", onMouseDown);
@@ -177,16 +183,19 @@ export default function TumblerPreview3D({
       const animate = () => {
         animationId = requestAnimationFrame(animate);
 
-        if (cylinderRef.current) {
+        if (cylinderRef.current && cameraRef.current) {
           // Smooth rotation towards target
-          mouseStateRef.current.rotationX += (mouseStateRef.current.targetRotationX - mouseStateRef.current.rotationX) * 0.1;
-          mouseStateRef.current.rotationY += (mouseStateRef.current.targetRotationY - mouseStateRef.current.rotationY) * 0.1;
+          mouseStateRef.current.rotationX += (mouseStateRef.current.targetRotationX - mouseStateRef.current.rotationX) * 0.15;
+          mouseStateRef.current.rotationY += (mouseStateRef.current.targetRotationY - mouseStateRef.current.rotationY) * 0.15;
 
           // Clamp X rotation to prevent flipping
-          mouseStateRef.current.rotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, mouseStateRef.current.rotationX));
+          mouseStateRef.current.rotationX = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, mouseStateRef.current.rotationX));
 
           cylinderRef.current.rotation.x = mouseStateRef.current.rotationX;
           cylinderRef.current.rotation.y = mouseStateRef.current.rotationY;
+
+          // Update camera zoom
+          cameraRef.current.position.z = mouseStateRef.current.zoom;
         }
 
         renderer.render(scene, camera);
@@ -196,12 +205,12 @@ export default function TumblerPreview3D({
 
       // Handle resize
       const handleResize = () => {
-        if (!containerRef.current) return;
+        if (!containerRef.current || !cameraRef.current || !rendererRef.current) return;
         const newWidth = containerRef.current.clientWidth;
         const newHeight = containerRef.current.clientHeight;
-        camera.aspect = newWidth / newHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(newWidth, newHeight);
+        cameraRef.current.aspect = newWidth / newHeight;
+        cameraRef.current.updateProjectionMatrix();
+        rendererRef.current.setSize(newWidth, newHeight);
       };
       window.addEventListener("resize", handleResize);
 
@@ -252,12 +261,12 @@ export default function TumblerPreview3D({
       <div ref={containerRef} className="h-full w-full" />
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded">
-          <p className="text-sm text-white">Loading texture...</p>
+          <p className="text-sm text-white">Loading...</p>
         </div>
       )}
-      <div className="absolute bottom-2 left-2 text-xs text-slate-400 pointer-events-none">
-        <p>Ø {safeDiameterMm.toFixed(1)}mm × H {safeHeightMm.toFixed(1)}mm</p>
-        <p>Drag to rotate • Scroll to zoom</p>
+      <div className="absolute bottom-2 left-2 text-xs text-slate-300 pointer-events-none bg-black/40 px-2 py-1 rounded">
+        <p className="font-semibold">Ø {safeDiameterMm.toFixed(1)}mm × H {safeHeightMm.toFixed(1)}mm</p>
+        <p className="text-slate-400">🖱️ Drag to rotate • 🔄 Scroll to zoom</p>
       </div>
     </div>
   );
