@@ -87,6 +87,7 @@ export default function InspectorPanel({
       <label className="block text-sm">
         <span className="mb-1 block font-medium">Selected Object</span>
         <select
+          name="selectedObjectId"
           value={selectedObjectId ?? ""}
           onChange={(event) => onSelectedObjectChange(event.target.value || null)}
           className="w-full rounded border border-slate-300 bg-white px-2 py-1"
@@ -126,6 +127,7 @@ export default function InspectorPanel({
                       {label} <span className="text-xs text-slate-500">({unit})</span>
                     </span>
                     <input
+                      name={`transform-${field}`}
                       type="number"
                       step="0.01"
                       value={transformValues[field as keyof TransformValues]}
@@ -150,6 +152,7 @@ export default function InspectorPanel({
               <label className="block text-sm">
                 <span className="mb-1 block font-medium">Opacity</span>
                 <input
+                  name="opacity"
                   type="range"
                   min="0"
                   max="1"
@@ -163,6 +166,7 @@ export default function InspectorPanel({
             <label className="block text-sm">
               <span className="mb-1 block font-medium">Blend (optional)</span>
               <select
+                name="blendMode"
                 className="w-full rounded border border-slate-300 bg-white px-2 py-1"
                 value={blendMode}
                 onChange={(event) => onUpdateBlendMode(event.target.value)}
@@ -174,11 +178,11 @@ export default function InspectorPanel({
             </label>
             <div className="flex flex-wrap gap-3 text-sm">
               <label className="inline-flex items-center gap-2">
-                <input type="checkbox" checked={isLocked} onChange={onToggleLock} />
+                <input name="isLocked" type="checkbox" checked={isLocked} onChange={onToggleLock} />
                 Lock
               </label>
               <label className="inline-flex items-center gap-2">
-                <input type="checkbox" checked={isHidden} onChange={onToggleHide} />
+                <input name="isHidden" type="checkbox" checked={isHidden} onChange={onToggleHide} />
                 Hide
               </label>
             </div>

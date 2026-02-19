@@ -155,6 +155,7 @@ export default function TracerPage() {
       {error ? <div className="rounded border border-red-500 p-2 text-red-600">{error}</div> : null}
 
       <input
+        name="sourceImage"
         type="file"
         accept="image/png,image/jpeg"
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -164,6 +165,7 @@ export default function TracerPage() {
         <label>
           Presets
           <select
+            name="tracePreset"
             className="ml-2 border"
             onChange={(e) => {
               const preset = PRESETS[e.target.value];
@@ -182,6 +184,7 @@ export default function TracerPage() {
         <label>
           Outline mode
           <input
+            name="outlineMode"
             className="ml-2"
             type="checkbox"
             checked={settings.outlineMode}
