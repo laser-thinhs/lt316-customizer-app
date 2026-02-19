@@ -72,22 +72,87 @@ export default function TumblerPreview3D({
         const radiusMm = safeDiameterMm / 2;
         const geometry = new THREE.CylinderGeometry(radiusMm, radiusMm, safeHeightMm, 64, 32);
 
-        // Create placeholder texture
-        const canvas = document.createElement("canvas");
-        canvas.width = 500;
-        canvas.height = 300;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.fillStyle = "#34495e";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.fillStyle = "#ecf0f1";
-          ctx.font = "24px Arial";
-          ctx.textAlign = "center";
-          ctx.fillText("Upload Design", canvas.width / 2, canvas.height / 2);
-        }
+        // Create texture canvas from asset
+        const createTextureCanvas = async (): Promise<HTMLCanvasElement> => {
+          const circumMm = radiusMm * 2 * Math.PI;
+          const mmScale = 3;
+          
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(circumMm * mmScale);
+          canvas.height = Math.ceil(safeHeightMm * mmScale);
+          
+          const ctx = canvas.getContext("2d");
+          if (!ctx) throw new Error("Failed to get canvas context");
 
-        const texture = new THREE.CanvasTexture(canvas);
-        const material = new THREE.MeshPhongMaterial({ map: texture, shininess: 30 });
+          // White background
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // If we have an asset URL, draw it
+          if (designParams?.assetUrl) {
+            try {
+              const img = new Image();
+              img.crossOrigin = "anonymous";
+              
+              await new Promise<void>((resolve, reject) => {
+                img.onload = () => {
+                  const x = (designParams.xMm || 0) * mmScale;
+                  const y = (designParams.yMm || 0) * mmScale;
+                  const w = (designParams.widthMm || 100) * mmScale;
+                  const h = (designParams.heightMm || 100) * mmScale;
+                  const rot = (designParams.rotationDeg || 0) * Math.PI / 180;
+
+                  ctx.save();
+                  ctx.globalAlpha = designParams.opacity || 1;
+
+                  // Rotate around center
+                  const centerX = x + w / 2;
+                  const centerY = y + h / 2;
+                  ctx.translate(centerX, centerY);
+                  ctx.rotate(rot);
+                  ctx.translate(-centerX, -centerY);
+
+                  ctx.drawImage(img, x, y, w, h);
+                  ctx.restore();
+                  
+                  resolve();
+                };
+                img.onerror = () => reject(new Error("Failed to load image"));
+                img.src = designParams.assetUrl;
+              });
+            } catch (err) {
+              console.warn("Failed to load asset image:", err);
+            }
+          }
+
+          // Draw seam lines
+          ctx.strokeStyle = "rgba(255, 0, 0, 0.4)";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(0, canvas.height);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(canvas.width - 1, 0);
+          ctx.lineTo(canvas.width - 1, canvas.height);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          return canvas;
+        };
+
+        // Create and apply texture
+        const textureCanvas = await createTextureCanvas();
+        const texture = new THREE.CanvasTexture(textureCanvas);
+        texture.magFilter = THREE.LinearFilter;
+        texture.minFilter = THREE.LinearFilter;
+        
+        const material = new THREE.MeshPhongMaterial({ 
+          map: texture, 
+          shininess: 30,
+          side: THREE.FrontSide
+        });
 
         const cylinder = new THREE.Mesh(geometry, material);
         cylinder.castShadow = true;
@@ -212,7 +277,7 @@ export default function TumblerPreview3D({
     };
 
     initThree();
-  }, [safeDiameterMm, safeHeightMm]);
+  }, [safeDiameterMm, safeHeightMm, designParams]);
 
   if (error) {
     return (
