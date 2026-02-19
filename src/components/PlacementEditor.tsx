@@ -109,6 +109,18 @@ function createTextObject(kind: TextObject["kind"]): TextObject {
 }
 
 const roundToHundredth = (value: number) => Math.round(value * 100) / 100;
+const FIXED_CANVAS_MM = 300;
+
+function withFixedCanvasSize(document: PlacementDocument): PlacementDocument {
+  return {
+    ...document,
+    canvas: {
+      ...document.canvas,
+      widthMm: FIXED_CANVAS_MM,
+      heightMm: FIXED_CANVAS_MM
+    }
+  };
+}
 
 function normalizeObjectOrder(objects: PlacementObject[]): PlacementObject[] {
   return objects.map((object, index) => ({ ...object, zIndex: index }));
@@ -125,10 +137,11 @@ function defaultLayerName(object: PlacementObject, index: number) {
 }
 
 export default function PlacementEditor({ designJobId, placement, onUpdated }: Props) {
-  const [doc, setDoc] = useState<PlacementDocument>(placementDocumentSchema.parse(placement));
+  const initialDoc = withFixedCanvasSize(placementDocumentSchema.parse(placement));
+  const [doc, setDoc] = useState<PlacementDocument>(initialDoc);
   const [assets, setAssets] = useState<ApiAsset[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [serverDoc, setServerDoc] = useState<PlacementDocument>(placementDocumentSchema.parse(placement));
+  const [serverDoc, setServerDoc] = useState<PlacementDocument>(initialDoc);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(doc.objects[0]?.id ?? null);
   const [undoStack, setUndoStack] = useState<PlacementDocument[]>([]);
   const [redoStack, setRedoStack] = useState<PlacementDocument[]>([]);
@@ -272,7 +285,8 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const commitDoc = (next: PlacementDocument) => {
     setUndoStack((prev) => [...prev.slice(-29), doc]);
     setRedoStack([]);
-    setDoc({ ...next, objects: normalizeObjectOrder(next.objects) });
+    const normalized = withFixedCanvasSize(next);
+    setDoc({ ...normalized, objects: normalizeObjectOrder(normalized.objects) });
   };
 
   const refreshAssets = useCallback(async () => {
@@ -291,11 +305,12 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     void refreshAssets();
   }, [refreshAssets]);
 
-  const handleRecoveredPlacement = useCallback((localDraft: PlacementDocument) => setDoc(localDraft), []);
+  const handleRecoveredPlacement = useCallback((localDraft: PlacementDocument) => setDoc(withFixedCanvasSize(localDraft)), []);
   const handleSavedPlacement = useCallback((savedDoc: PlacementDocument) => {
-    if (!arePlacementsEqual(doc, savedDoc)) setDoc(savedDoc);
-    setServerDoc(savedDoc);
-    onUpdated(savedDoc);
+    const normalizedSavedDoc = withFixedCanvasSize(savedDoc);
+    if (!arePlacementsEqual(doc, normalizedSavedDoc)) setDoc(normalizedSavedDoc);
+    setServerDoc(normalizedSavedDoc);
+    onUpdated(normalizedSavedDoc);
   }, [doc, onUpdated]);
 
   const autosave = useAutosavePlacement({ designJobId, placement: doc, serverPlacement: serverDoc, onPlacementRecovered: handleRecoveredPlacement, onPlacementSaved: handleSavedPlacement });
@@ -874,7 +889,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
           <label className="flex items-center gap-1"><input type="checkbox" checked={keepAspectResize} onChange={(event) => setKeepAspectResize(event.target.checked)} /> Keep aspect resize</label>
         </div>
         <WrapCanvas
-          template={{ widthMm: doc.canvas.widthMm, heightMm: doc.canvas.heightMm, safeMarginMm: 2 }}
+          template={{ widthMm: 300, heightMm: 300, safeMarginMm: 2 }}
           objects={canvasObjects}
           selectedId={selectedObjectId}
           dpi={canvasDpi}
