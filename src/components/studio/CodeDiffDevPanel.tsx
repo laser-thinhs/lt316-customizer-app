@@ -117,12 +117,14 @@ export default function CodeDiffDevPanel() {
 
       <div className="grid gap-2 sm:grid-cols-2">
         <input
+          name="apiKey"
           className="rounded border border-slate-300 px-3 py-2 text-sm"
           placeholder="x-api-key"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
         />
         <select
+          name="actorRole"
           className="rounded border border-slate-300 px-3 py-2 text-sm"
           value={actorRole}
           onChange={(e) => setActorRole(e.target.value)}
@@ -133,13 +135,14 @@ export default function CodeDiffDevPanel() {
       </div>
 
       <textarea
+        name="instruction"
         className="min-h-28 w-full rounded border border-slate-300 p-3 font-mono text-sm"
         value={instruction}
         onChange={(e) => setInstruction(e.target.value)}
       />
 
       <label className="flex items-start gap-2 text-sm">
-        <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+        <input name="acknowledgeManualApply" type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
         <span>I understand this will not auto-apply. I will review and apply manually.</span>
       </label>
 

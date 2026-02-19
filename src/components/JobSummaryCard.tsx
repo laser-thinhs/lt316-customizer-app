@@ -8,9 +8,9 @@ type Job = {
 
 export default function JobSummaryCard({ job }: { job: Job }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="text-base font-semibold text-slate-900">Job Created</h2>
-      <dl className="mt-3 space-y-1 text-sm text-slate-700">
+    <div className="rounded-xl border border-sky-400/25 bg-slate-950/50 p-4 shadow-[0_0_0_1px_rgba(56,189,248,0.16)]">
+      <h2 className="text-base font-semibold text-slate-100">Job Created</h2>
+      <dl className="mt-3 space-y-1 text-sm text-slate-100/85">
         <div className="flex justify-between gap-4">
           <dt className="font-medium">Job ID</dt>
           <dd className="truncate">{job.id}</dd>

@@ -111,16 +111,21 @@ export default function HomePageClient() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-screen-2xl px-4 py-6 sm:py-10">
-      <div className="space-y-6">
-        <header className="space-y-1">
-          <h1 className="text-xl font-bold tracking-tight">LT316 Proof Builder</h1>
-          <p className="text-sm text-slate-600">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_55%_20%,rgba(59,130,246,0.28)_0%,rgba(8,47,73,0.42)_26%,rgba(2,6,23,0.94)_62%),linear-gradient(180deg,#030712_0%,#020617_100%)] px-4 py-6 text-slate-100 sm:py-10">
+      <div className="mx-auto w-full max-w-screen-2xl space-y-6">
+        <header className="space-y-2 text-center">
+          <p className="text-xs uppercase tracking-[0.24em] text-sky-300/80">Laser Things 316</p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-100">Precision Jigs & Laser-Ready Templates</h1>
+          <p className="text-sm text-slate-300">
             Layer 2.1 foundation: text objects, typography controls, and deterministic mm placement.
           </p>
         </header>
 
-        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="mx-auto w-full max-w-3xl space-y-4 rounded-2xl border border-sky-400/25 bg-slate-950/55 p-4 shadow-[0_0_0_1px_rgba(56,189,248,0.18),0_22px_70px_rgba(2,6,23,0.72)] backdrop-blur-sm sm:p-6">
+          <div className="rounded-md border border-fuchsia-400/30 bg-fuchsia-950/25 px-3 py-2 text-xs text-fuchsia-200">
+            EXPERIMENTAL: Dimensions may need adjustment. Verify before engraving.
+          </div>
+
           <ProductSelector
             products={products}
             value={resolvedSelectedProductId}
@@ -138,15 +143,15 @@ export default function HomePageClient() {
               Boolean(productsError)
             }
             className="
-              w-full rounded-md bg-slate-900 px-4 py-2
-              text-sm font-medium text-white
+              w-full rounded-md border border-fuchsia-300/45 bg-fuchsia-600/70 px-4 py-2
+              text-sm font-semibold text-white transition-colors hover:bg-fuchsia-500/80
               disabled:cursor-not-allowed disabled:opacity-60
             "
           >
             {isCreatingJob ? "Creating Job..." : "New Job"}
           </button>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-rose-300">{error}</p>}
         </section>
 
         {job && (

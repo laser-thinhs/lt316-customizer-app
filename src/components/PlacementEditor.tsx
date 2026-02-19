@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   ImagePlacementObject,
@@ -150,7 +150,31 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const [showCenterlines, setShowCenterlines] = useState(true);
   const [showSafeMargin, setShowSafeMargin] = useState(true);
   const [keepAspectResize, setKeepAspectResize] = useState(true);
+  const [isArtworkDragging, setArtworkDragging] = useState(false);
+  const [isUploadingArtwork, setUploadingArtwork] = useState(false);
+  const [selectedArtworkFile, setSelectedArtworkFile] = useState<{ name: string; size: number } | null>(null);
+  const [artworkUploadError, setArtworkUploadError] = useState<string | null>(null);
+  const artworkInputRef = useRef<HTMLInputElement>(null);
   const canRender3DPreview = process.env.NODE_ENV !== "test";
+
+  const formatBytes = (bytes: number) => {
+    if (!Number.isFinite(bytes)) return "";
+    if (bytes < 1024) return `${bytes} B`;
+    const units = ["KB", "MB", "GB"];
+    let value = bytes / 1024;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  };
+
+  const formatAssetDate = (createdAt: string) => {
+    const parsed = new Date(createdAt);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toLocaleString();
+  };
 
   const copyText = async (value: string, label: string) => {
     try {
@@ -418,9 +442,10 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     });
   };
 
-  const onUploadArtwork = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const uploadArtworkFile = async (file: File) => {
+    setArtworkUploadError(null);
+    setSelectedArtworkFile({ name: file.name, size: file.size });
+    setUploadingArtwork(true);
     try {
       const form = new FormData();
       form.append("designJobId", designJobId);
@@ -429,12 +454,48 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message || "Upload failed");
       setStatusMessage(`Uploaded ${json.data.originalName ?? file.name}`);
+      setSelectedArtworkFile(null);
       await refreshAssets();
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Upload failed");
+      const message = error instanceof Error ? error.message : "Upload failed";
+      setArtworkUploadError(message);
+      setStatusMessage(message);
+    }
+  };
+
+  const onUploadArtwork = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await uploadArtworkFile(file);
     } finally {
+      setUploadingArtwork(false);
       event.target.value = "";
     }
+  };
+
+  const onArtworkDrop = async (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setArtworkDragging(false);
+    const file = event.dataTransfer.files?.[0];
+    if (!file) return;
+    try {
+      await uploadArtworkFile(file);
+    } finally {
+      setUploadingArtwork(false);
+    }
+  };
+
+  const onArtworkDropzoneKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    artworkInputRef.current?.click();
+  };
+
+  const clearSelectedArtworkFile = () => {
+    setSelectedArtworkFile(null);
+    setArtworkUploadError(null);
+    if (artworkInputRef.current) artworkInputRef.current.value = "";
   };
 
   const onAddAssetToCanvas = (asset: ApiAsset) => {
@@ -459,6 +520,91 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
       setStatusMessage(error instanceof Error ? error.message : "Could not add image");
     }
   };
+
+  const renderArtworkAssetsSection = () => (
+    <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold text-slate-900">Artwork Assets</h3>
+        <p className="text-xs text-slate-600">Upload your artwork for this job. Supported: SVG, PNG, JPG.</p>
+      </div>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label="Upload artwork by choosing a file or dragging and dropping it here"
+        className={`space-y-3 rounded-lg border border-dashed p-4 transition ${isArtworkDragging ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-slate-50"} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400`}
+        onKeyDown={onArtworkDropzoneKeyDown}
+        onClick={() => artworkInputRef.current?.click()}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setArtworkDragging(true);
+        }}
+        onDragLeave={() => setArtworkDragging(false)}
+        onDrop={onArtworkDrop}
+      >
+        <div className="flex items-start gap-3">
+          <span aria-hidden className="mt-0.5 text-base">⇪</span>
+          <div className="space-y-1 text-xs text-slate-700">
+            <p className="font-medium text-slate-900">{selectedArtworkFile ? selectedArtworkFile.name : "No artwork uploaded yet."}</p>
+            <p className="text-slate-600">{selectedArtworkFile ? `${formatBytes(selectedArtworkFile.size)} selected` : "Drag & drop a file here, or choose a file."}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+            onClick={(event) => {
+              event.stopPropagation();
+              artworkInputRef.current?.click();
+            }}
+          >
+            Choose file
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!selectedArtworkFile || isUploadingArtwork}
+            onClick={(event) => {
+              event.stopPropagation();
+              clearSelectedArtworkFile();
+            }}
+          >
+            Clear
+          </button>
+          <p className="text-xs text-slate-500">Size limits apply.</p>
+        </div>
+        <input
+          ref={artworkInputRef}
+          type="file"
+          accept=".svg,.png,.jpg,.jpeg,.webp"
+          className="sr-only"
+          onChange={onUploadArtwork}
+        />
+      </div>
+      {isUploadingArtwork ? <p className="text-xs text-slate-600">Uploading…</p> : null}
+      {artworkUploadError ? <p className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">{artworkUploadError}</p> : null}
+      <div className="max-h-52 space-y-2 overflow-auto pr-1">
+        {assets.map((asset) => {
+          const uploadedLabel = formatAssetDate(asset.createdAt);
+          return (
+            <div key={asset.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-sm">
+              <div>
+                <p className="font-medium text-slate-900">{asset.originalName ?? asset.id}</p>
+                <p className="text-slate-600">{asset.widthPx ?? "?"}×{asset.heightPx ?? "?"} px</p>
+                {uploadedLabel ? <p className="text-slate-500">Uploaded {uploadedLabel}</p> : null}
+              </div>
+              <button className="rounded-md border border-slate-300 px-2 py-1 font-medium text-slate-700 transition hover:bg-slate-50" onClick={() => onAddAssetToCanvas(asset)}>Add to Canvas</button>
+            </div>
+          );
+        })}
+        {assets.length === 0 ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+            <p className="font-medium text-slate-800">No artwork uploaded yet.</p>
+            <p className="mt-1">Drag & drop a file here, or choose a file.</p>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
 
   const patchLayer = (id: string, patch: Partial<PlacementObject>) => {
     commitDoc({
@@ -628,11 +774,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-3">
-          <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
-            <h3 className="text-sm font-semibold">Artwork Assets</h3>
-            <label className="block text-sm"><span>Upload Artwork</span><input type="file" accept=".svg,.png,.jpg,.jpeg,.webp" className="mt-1 block w-full text-xs" onChange={onUploadArtwork} /></label>
-            <div className="max-h-44 space-y-2 overflow-auto">{assets.map((asset) => <div key={asset.id} className="flex items-center justify-between gap-2 rounded border bg-white p-2 text-xs"><div><p className="font-medium">{asset.originalName ?? asset.id}</p><p className="text-slate-600">{asset.widthPx ?? "?"}├ù{asset.heightPx ?? "?"} px</p></div><button className="rounded border px-2 py-1" onClick={() => onAddAssetToCanvas(asset)}>Add to Canvas</button></div>)}{assets.length === 0 ? <p className="text-xs text-slate-600">No artwork uploaded for this job yet.</p> : null}</div>
-          </section>
+          {renderArtworkAssetsSection()}
 
           {isTextObject(selected) ? (
             <section className="grid grid-cols-1 gap-2 rounded border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
@@ -685,25 +827,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
       </section>
 
       {isAssetPickerOpen ? (
-        <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
-          <h3 className="text-sm font-semibold">Artwork Assets</h3>
-          <label className="block text-sm">
-            <span>Upload Artwork</span>
-            <input type="file" accept=".svg,.png,.jpg,.jpeg,.webp" className="mt-1 block w-full text-xs" onChange={onUploadArtwork} />
-          </label>
-          <div className="max-h-44 space-y-2 overflow-auto">
-            {assets.map((asset) => (
-              <div key={asset.id} className="flex items-center justify-between gap-2 rounded border bg-white p-2 text-xs">
-                <div>
-                  <p className="font-medium">{asset.originalName ?? asset.id}</p>
-                  <p className="text-slate-600">{asset.widthPx ?? "?"}├ù{asset.heightPx ?? "?"} px</p>
-                </div>
-                <button className="rounded border px-2 py-1" onClick={() => onAddAssetToCanvas(asset)}>Add to Canvas</button>
-              </div>
-            ))}
-            {assets.length === 0 ? <p className="text-xs text-slate-600">No artwork uploaded for this job yet.</p> : null}
-          </div>
-        </section>
+        renderArtworkAssetsSection()
       ) : null}
 
       <label className="block text-sm"><span>Selected Object</span><select value={selectedObjectId ?? ""} onChange={(event) => setSelectedObjectId(event.target.value || null)} className="w-full rounded border px-2 py-1"><option value="">None</option>{doc.objects.map((entry, index) => (<option key={entry.id} value={entry.id}>{defaultLayerName(entry, index)}</option>))}</select></label>
