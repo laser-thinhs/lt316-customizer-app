@@ -25,6 +25,7 @@ type WrapCanvasProps = {
   showCenterlines: boolean;
   showSafeMargin: boolean;
   keepAspectRatio: boolean;
+  displayMode?: "default" | "overlay";
   onSelect: (id: string | null) => void;
   onUpdateTransform: (id: string, patch: { xMm: number; yMm: number; widthMm: number; heightMm: number }) => void;
 };
@@ -47,6 +48,7 @@ export default function WrapCanvas(props: WrapCanvasProps) {
     showCenterlines,
     showSafeMargin,
     keepAspectRatio,
+    displayMode = "default",
     onSelect,
     onUpdateTransform
   } = props;
@@ -59,6 +61,9 @@ export default function WrapCanvas(props: WrapCanvasProps) {
   const handleSizePx = useMemo(() => mmToCanvasPx(HANDLE_SIZE_MM, dpi), [dpi]);
 
   const selected = useMemo(() => objects.find((entry) => entry.id === selectedId) ?? null, [objects, selectedId]);
+  const isOverlay = displayMode === "overlay";
+  const svgWidth = isOverlay ? "100%" : widthPx;
+  const svgHeight = isOverlay ? "100%" : heightPx;
 
   useEffect(() => {
     if (!drag) return;
@@ -134,7 +139,7 @@ export default function WrapCanvas(props: WrapCanvasProps) {
   return (
     <div
       ref={containerRef}
-      className="space-y-2"
+      className={isOverlay ? "h-full w-full" : "space-y-2"}
       tabIndex={0}
       onKeyDown={(event) => {
         if (!selected) return;
@@ -154,12 +159,12 @@ export default function WrapCanvas(props: WrapCanvasProps) {
         }
       }}
     >
-      <div className="overflow-auto rounded border bg-slate-50 p-2">
+      <div className={isOverlay ? "h-full w-full overflow-hidden rounded border border-transparent bg-transparent p-0" : "overflow-auto rounded border bg-slate-50 p-2"}>
         <svg
-          width={widthPx}
-          height={heightPx}
+          width={svgWidth}
+          height={svgHeight}
           viewBox={`0 0 ${widthPx} ${heightPx}`}
-          className="border border-slate-300 bg-white"
+          className={isOverlay ? "block h-full w-full bg-transparent" : "border border-slate-300 bg-white"}
           onPointerDown={(event) => {
             if (event.target === event.currentTarget) onSelect(null);
           }}
@@ -257,7 +262,7 @@ export default function WrapCanvas(props: WrapCanvasProps) {
           })() : null}
         </svg>
       </div>
-      <p className="text-xs text-slate-500">Canvas: {template.widthMm}mm × {template.heightMm}mm @ {dpi} DPI</p>
+      {isOverlay ? null : <p className="text-xs text-slate-500">Canvas: {template.widthMm}mm × {template.heightMm}mm @ {dpi} DPI</p>}
     </div>
   );
 }

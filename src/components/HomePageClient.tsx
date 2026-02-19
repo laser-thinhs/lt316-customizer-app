@@ -207,6 +207,8 @@ export default function HomePageClient() {
           <PlacementEditor
             designJobId={job.id}
             placement={job.placementJson}
+            modelImageUrl={job.previewImagePath ?? undefined}
+            modelMaskUrl={job.previewMaskImagePath ?? job.productProfile.toolOutlineSvgPath ?? undefined}
             onUpdated={(placementJson) => setJob((prev) => (prev ? { ...prev, placementJson } : prev))}
           />
         )}

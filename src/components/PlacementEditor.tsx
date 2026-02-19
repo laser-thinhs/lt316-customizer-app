@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { ChangeEvent, DragEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, ChangeEvent, DragEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   ImagePlacementObject,
@@ -21,6 +21,8 @@ import WrapCanvas, { WrapCanvasObject } from "@/components/editor/WrapCanvas";
 type Props = {
   designJobId: string;
   placement: PlacementDocument;
+  modelImageUrl?: string;
+  modelMaskUrl?: string;
   onUpdated: (placement: PlacementDocument) => void;
 };
 
@@ -48,6 +50,7 @@ type TransformField = "xMm" | "yMm" | "widthMm" | "heightMm" | "rotationDeg";
 type TransformValues = Record<TransformField, string>;
 
 const defaultTransformValues: TransformValues = { xMm: "", yMm: "", widthMm: "", heightMm: "", rotationDeg: "" };
+const defaultModelImageUrl = "/models/tumbler-preview.svg";
 
 function randomId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -136,7 +139,7 @@ function defaultLayerName(object: PlacementObject, index: number) {
   return object.layerName ?? `${object.kind.replace("_", " ")} ${index + 1}`;
 }
 
-export default function PlacementEditor({ designJobId, placement, onUpdated }: Props) {
+export default function PlacementEditor({ designJobId, placement, modelImageUrl, modelMaskUrl, onUpdated }: Props) {
   const initialDoc = withFixedCanvasSize(placementDocumentSchema.parse(placement));
   const [doc, setDoc] = useState<PlacementDocument>(initialDoc);
   const [assets, setAssets] = useState<ApiAsset[]>([]);
@@ -173,6 +176,18 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const textContentInputRef = useRef<HTMLTextAreaElement>(null);
   const shouldFocusTextInputRef = useRef(false);
   const canRender3DPreview = process.env.NODE_ENV !== "test";
+  const resolvedModelImageUrl = modelImageUrl && modelImageUrl.trim().length > 0 ? modelImageUrl : defaultModelImageUrl;
+  const resolvedModelMaskUrl = modelMaskUrl && modelMaskUrl.trim().length > 0 ? modelMaskUrl : null;
+  const previewOverlayStyle: CSSProperties | undefined = resolvedModelMaskUrl ? {
+    WebkitMaskImage: `url(${resolvedModelMaskUrl})`,
+    maskImage: `url(${resolvedModelMaskUrl})`,
+    WebkitMaskRepeat: "no-repeat",
+    maskRepeat: "no-repeat",
+    WebkitMaskPosition: "center",
+    maskPosition: "center",
+    WebkitMaskSize: "contain",
+    maskSize: "contain"
+  } : undefined;
 
   const formatBytes = (bytes: number) => {
     if (!Number.isFinite(bytes)) return "";
@@ -940,19 +955,30 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
               <label className="flex items-center gap-1"><input type="checkbox" checked={showSafeMargin} onChange={(event) => setShowSafeMargin(event.target.checked)} /> Safe margin</label>
               <label className="flex items-center gap-1"><input type="checkbox" checked={keepAspectResize} onChange={(event) => setKeepAspectResize(event.target.checked)} /> Keep aspect resize</label>
             </div>
-            <WrapCanvas
-              template={{ widthMm: 300, heightMm: 300, safeMarginMm: 2 }}
-              objects={canvasObjects}
-              selectedId={selectedObjectId}
-              dpi={canvasPreviewDpi}
-              gridEnabled={gridEnabled}
-              gridSpacingMm={gridSpacingMm}
-              showCenterlines={showCenterlines}
-              showSafeMargin={showSafeMargin}
-              keepAspectRatio={keepAspectResize}
-              onSelect={setSelectedObjectId}
-              onUpdateTransform={updateObjectTransform}
-            />
+            <div className="relative overflow-hidden rounded border border-slate-200 bg-slate-100" style={{ aspectRatio: `${doc.canvas.widthMm} / ${doc.canvas.heightMm}` }}>
+              <img
+                src={resolvedModelImageUrl}
+                alt="Product model preview"
+                className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+                draggable={false}
+              />
+              <div className="absolute inset-0 z-10 pointer-events-auto" style={previewOverlayStyle}>
+                <WrapCanvas
+                  template={{ widthMm: 300, heightMm: 300, safeMarginMm: 2 }}
+                  objects={canvasObjects}
+                  selectedId={selectedObjectId}
+                  dpi={canvasPreviewDpi}
+                  gridEnabled={gridEnabled}
+                  gridSpacingMm={gridSpacingMm}
+                  showCenterlines={showCenterlines}
+                  showSafeMargin={showSafeMargin}
+                  keepAspectRatio={keepAspectResize}
+                  displayMode="overlay"
+                  onSelect={setSelectedObjectId}
+                  onUpdateTransform={updateObjectTransform}
+                />
+              </div>
+            </div>
             <p className="text-xs text-slate-600">Drag to move. Shift-drag locks axis. Arrow keys nudge 1mm (Shift = 5mm).</p>
           </section>
 
