@@ -9,18 +9,27 @@ const uploadFormSchema = z.object({
 });
 
 const listQuerySchema = z.object({
-  jobId: z.string().min(1)
+  jobId: z.string().min(1).optional(),
+  designJobId: z.string().min(1).optional()
 });
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
-    const parsed = listQuerySchema.safeParse({ jobId: url.searchParams.get("jobId") });
+    const parsed = listQuerySchema.safeParse({
+      jobId: url.searchParams.get("jobId") ?? undefined,
+      designJobId: url.searchParams.get("designJobId") ?? undefined
+    });
     if (!parsed.success) {
       throw new AppError("jobId is required", 400, "INVALID_QUERY", parsed.error.issues);
     }
 
-    const assets = await listAssetsByJobId(parsed.data.jobId);
+    const designJobId = parsed.data.jobId ?? parsed.data.designJobId;
+    if (!designJobId) {
+      return ok([]);
+    }
+
+    const assets = await listAssetsByJobId(designJobId);
     return ok(assets);
   } catch (error) {
     return fail(error);
