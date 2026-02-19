@@ -20,7 +20,9 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
     "typecheck": "tsc --noEmit",
-    "studio:check": "bash scripts/studio-check.sh"
+    "studio:check": "bash scripts/studio-check.sh",
+    "branch:clean": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/branch-clean.ps1",
+    "branch:clean:apply": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/branch-clean.ps1 -Apply"
   },
   "dependencies": {
     "@prisma/client": "^6.3.1",
