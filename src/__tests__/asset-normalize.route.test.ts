@@ -20,6 +20,8 @@ jest.mock("@/lib/prisma", () => ({
 }));
 
 describe("POST /api/assets/[id]/normalize", () => {
+  const normalizePathForAssert = (value: string) => value.replace(/\\/g, "/");
+
   beforeEach(() => {
     jest.clearAllMocks();
     (fs.readFile as jest.Mock).mockResolvedValue(Buffer.from("<svg></svg>"));
@@ -45,21 +47,16 @@ describe("POST /api/assets/[id]/normalize", () => {
     });
 
     expect(res.status).toBe(201);
-    expect(fs.mkdir).toHaveBeenCalledWith("/tmp/storage/design-jobs/job_1/asset_1", {
-      recursive: true
-    });
-    expect(fs.writeFile).toHaveBeenCalledWith(
-      "/tmp/storage/design-jobs/job_1/asset_1/normalized.svg",
-      expect.any(String),
-      "utf8"
-    );
-    expect(prisma.asset.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          filePath: "/tmp/storage/design-jobs/job_1/asset_1/normalized.svg"
-        })
-      })
-    );
+    const mkdirPath = (fs.mkdir as jest.Mock).mock.calls[0][0] as string;
+    const writePath = (fs.writeFile as jest.Mock).mock.calls[0][0] as string;
+    const createdPath = (prisma.asset.create as jest.Mock).mock.calls[0][0].data.filePath as string;
+
+    expect(normalizePathForAssert(mkdirPath)).toBe("/tmp/storage/design-jobs/job_1/asset_1");
+    expect((fs.mkdir as jest.Mock).mock.calls[0][1]).toEqual({ recursive: true });
+    expect(normalizePathForAssert(writePath)).toBe("/tmp/storage/design-jobs/job_1/asset_1/normalized.svg");
+    expect((fs.writeFile as jest.Mock).mock.calls[0][1]).toEqual(expect.any(String));
+    expect((fs.writeFile as jest.Mock).mock.calls[0][2]).toBe("utf8");
+    expect(normalizePathForAssert(createdPath)).toBe("/tmp/storage/design-jobs/job_1/asset_1/normalized.svg");
   });
 
   it("keeps using the current directory when the asset is already isolated", async () => {
@@ -80,15 +77,11 @@ describe("POST /api/assets/[id]/normalize", () => {
     });
 
     expect(res.status).toBe(201);
-    expect(fs.mkdir).toHaveBeenCalledWith("/tmp/storage/design-jobs/job_1/asset_2", {
-      recursive: true
-    });
-    expect(prisma.asset.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          filePath: "/tmp/storage/design-jobs/job_1/asset_2/normalized.svg"
-        })
-      })
-    );
+    const mkdirPath = (fs.mkdir as jest.Mock).mock.calls[0][0] as string;
+    const createdPath = (prisma.asset.create as jest.Mock).mock.calls[0][0].data.filePath as string;
+
+    expect(normalizePathForAssert(mkdirPath)).toBe("/tmp/storage/design-jobs/job_1/asset_2");
+    expect((fs.mkdir as jest.Mock).mock.calls[0][1]).toEqual({ recursive: true });
+    expect(normalizePathForAssert(createdPath)).toBe("/tmp/storage/design-jobs/job_1/asset_2/normalized.svg");
   });
 });
