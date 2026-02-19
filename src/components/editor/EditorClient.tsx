@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
+
 import Image from "next/image";
 import { usePlacementStore, selectPlacementDerived } from "@/store/placementStore";
 import type { PlacementInput } from "@/schemas/placement";
 import { circumferenceMm } from "@/lib/geometry/cylinder";
 import CanvasRenderer from "./CanvasRenderer";
 
-const TumblerPreview3D = dynamic(() => import("./TumblerPreview3D"), { ssr: false });
-const AssetGallery = dynamic(() => import("./AssetGallery"), { ssr: false });
+import TumblerPreview3D from "./TumblerPreview3D";
+
 
 type AssetRef = {
   id: string;

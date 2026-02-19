@@ -22,6 +22,7 @@ export default function TumblerPreview3D({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string>("");
 
   // Ensure all values are valid numbers
   const safeDiameterMm = typeof diameterMm === "number" && isFinite(diameterMm) ? diameterMm : 76.2;
@@ -33,6 +34,7 @@ export default function TumblerPreview3D({
     const initThree = async () => {
       try {
         setIsLoading(true);
+        setDebugInfo(`Initializing... designParams: ${JSON.stringify(designParams)}`);
         
         // Dynamically import Three.js
         const THREE = await import("three");
@@ -70,81 +72,91 @@ export default function TumblerPreview3D({
 
         // Cylinder
         const radiusMm = safeDiameterMm / 2;
+        const circumMm = radiusMm * 2 * Math.PI;
+        const mmScale = 3;
         const geometry = new THREE.CylinderGeometry(radiusMm, radiusMm, safeHeightMm, 64, 32);
 
-        // Create texture canvas from asset
-        const createTextureCanvas = async (): Promise<HTMLCanvasElement> => {
-          const circumMm = radiusMm * 2 * Math.PI;
-          const mmScale = 3;
-          
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.ceil(circumMm * mmScale);
-          canvas.height = Math.ceil(safeHeightMm * mmScale);
-          
-          const ctx = canvas.getContext("2d");
-          if (!ctx) throw new Error("Failed to get canvas context");
+        // Create texture canvas
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.ceil(circumMm * mmScale);
+        canvas.height = Math.ceil(safeHeightMm * mmScale);
+        
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Failed to get canvas context");
 
-          // White background
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // White background
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-          // If we have an asset URL, draw it
-          if (designParams?.assetUrl) {
-            try {
-              const img = new Image();
-              img.crossOrigin = "anonymous";
+        // Draw image if available
+        if (designParams?.assetUrl) {
+          setDebugInfo(`Loading image from: ${designParams.assetUrl}`);
+          
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => {
+              setDebugInfo(`Image loaded successfully: ${img.width}x${img.height}`);
               
-              await new Promise<void>((resolve, reject) => {
-                img.onload = () => {
-                  const x = (designParams.xMm || 0) * mmScale;
-                  const y = (designParams.yMm || 0) * mmScale;
-                  const w = (designParams.widthMm || 100) * mmScale;
-                  const h = (designParams.heightMm || 100) * mmScale;
-                  const rot = (designParams.rotationDeg || 0) * Math.PI / 180;
+              const x = (designParams.xMm || 0) * mmScale;
+              const y = (designParams.yMm || 0) * mmScale;
+              const w = (designParams.widthMm || 100) * mmScale;
+              const h = (designParams.heightMm || 100) * mmScale;
+              const rot = ((designParams.rotationDeg || 0) * Math.PI) / 180;
 
-                  ctx.save();
-                  ctx.globalAlpha = designParams.opacity || 1;
+              ctx.save();
+              ctx.globalAlpha = designParams.opacity || 1;
 
-                  // Rotate around center
-                  const centerX = x + w / 2;
-                  const centerY = y + h / 2;
-                  ctx.translate(centerX, centerY);
-                  ctx.rotate(rot);
-                  ctx.translate(-centerX, -centerY);
+              // Rotate around center
+              const centerX = x + w / 2;
+              const centerY = y + h / 2;
+              ctx.translate(centerX, centerY);
+              ctx.rotate(rot);
+              ctx.translate(-centerX, -centerY);
 
-                  ctx.drawImage(img, x, y, w, h);
-                  ctx.restore();
-                  
-                  resolve();
-                };
-                img.onerror = () => reject(new Error("Failed to load image"));
-                img.src = designParams.assetUrl;
-              });
-            } catch (err) {
-              console.warn("Failed to load asset image:", err);
-            }
-          }
+              ctx.drawImage(img, x, y, w, h);
+              ctx.restore();
+              
+              resolve();
+            };
+            img.onerror = (err) => {
+              setDebugInfo(`Image load error: ${err}`);
+              reject(new Error("Failed to load image"));
+            };
+            img.src = designParams.assetUrl;
+          });
+        } else {
+          setDebugInfo("No asset URL provided");
+        }
 
-          // Draw seam lines
-          ctx.strokeStyle = "rgba(255, 0, 0, 0.4)";
-          ctx.lineWidth = 2;
-          ctx.setLineDash([4, 4]);
+        // Draw seam lines
+        ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(0, canvas.height);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(canvas.width - 1, 0);
+        ctx.lineTo(canvas.width - 1, canvas.height);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Draw grid for reference
+        ctx.strokeStyle = "rgba(200, 200, 200, 0.2)";
+        ctx.lineWidth = 1;
+        const gridSpacing = 20 * mmScale;
+        for (let x = 0; x < canvas.width; x += gridSpacing) {
           ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.lineTo(0, canvas.height);
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, canvas.height);
           ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(canvas.width - 1, 0);
-          ctx.lineTo(canvas.width - 1, canvas.height);
-          ctx.stroke();
-          ctx.setLineDash([]);
+        }
 
-          return canvas;
-        };
-
-        // Create and apply texture
-        const textureCanvas = await createTextureCanvas();
-        const texture = new THREE.CanvasTexture(textureCanvas);
+        // Apply texture
+        const texture = new THREE.CanvasTexture(canvas);
         texture.magFilter = THREE.LinearFilter;
         texture.minFilter = THREE.LinearFilter;
         
@@ -250,8 +262,8 @@ export default function TumblerPreview3D({
         };
 
         window.addEventListener("resize", handleResize);
-
         setIsLoading(false);
+        setDebugInfo("3D loaded successfully");
 
         return () => {
           window.removeEventListener("resize", handleResize);
@@ -271,7 +283,9 @@ export default function TumblerPreview3D({
         };
       } catch (err) {
         console.error("Error initializing Three.js:", err);
-        setError(err instanceof Error ? err.message : "Failed to load 3D view");
+        const errMsg = err instanceof Error ? err.message : "Failed to load 3D view";
+        setError(errMsg);
+        setDebugInfo(`Error: ${errMsg}`);
         setIsLoading(false);
       }
     };
@@ -295,9 +309,10 @@ export default function TumblerPreview3D({
           <p className="text-sm text-white">Loading 3D...</p>
         </div>
       )}
-      <div className="absolute bottom-2 left-2 text-xs text-slate-300 pointer-events-none bg-black/40 px-2 py-1 rounded">
+      <div className="absolute bottom-2 left-2 text-xs text-slate-300 pointer-events-none bg-black/40 px-2 py-1 rounded max-w-[200px]">
         <p className="font-semibold">Ø {safeDiameterMm.toFixed(1)}mm × H {safeHeightMm.toFixed(1)}mm</p>
         <p className="text-slate-400">🖱️ Drag to rotate • 🔄 Scroll to zoom</p>
+        <p className="text-slate-500 mt-1 break-words text-[10px]">{debugInfo}</p>
       </div>
     </div>
   );
