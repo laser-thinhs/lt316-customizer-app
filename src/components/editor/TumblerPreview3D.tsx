@@ -1,14 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import * as THREE from "three";
-import { createCylinderTexture, type DesignParams } from "@/lib/rendering/cylinderTexture";
-import { circumferenceMm } from "@/lib/geometry/cylinder";
 
 type Props = {
   diameterMm?: number | null;
   heightMm?: number | null;
-  designParams?: DesignParams | null;
+  designParams?: any;
   rotationDeg?: number | null;
   offsetYMm?: number | null;
   engraveZoneHeightMm?: number | null;
@@ -23,245 +20,214 @@ export default function TumblerPreview3D({
   engraveZoneHeightMm = 100
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const cylinderRef = useRef<THREE.Mesh | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const animationIdRef = useRef<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-
-  // Mouse control state
-  const mouseStateRef = useRef({
-    isDown: false,
-    startX: 0,
-    startY: 0,
-    rotationX: 0,
-    rotationY: 0,
-    targetRotationX: 0,
-    targetRotationY: 0,
-    zoom: 250
-  });
+  const [error, setError] = useState<string | null>(null);
 
   // Ensure all values are valid numbers
   const safeDiameterMm = typeof diameterMm === "number" && isFinite(diameterMm) ? diameterMm : 76.2;
   const safeHeightMm = typeof heightMm === "number" && isFinite(heightMm) ? heightMm : 100;
-  const safeOffsetYMm = typeof offsetYMm === "number" && isFinite(offsetYMm) ? offsetYMm : 0;
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    try {
-      setIsLoading(true);
-
-      // Scene setup
-      const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x1a1a2e);
-      sceneRef.current = scene;
-
-      // Camera - positioned further back for better initial view
-      const width = containerRef.current.clientWidth;
-      const height = containerRef.current.clientHeight;
-      const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-      camera.position.set(0, 0, 250);
-      camera.lookAt(0, 0, 0);
-      cameraRef.current = camera;
-
-      // Renderer
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setSize(width, height);
-      renderer.setPixelRatio(window.devicePixelRatio);
-      renderer.shadowMap.enabled = true;
-      containerRef.current.appendChild(renderer.domElement);
-      rendererRef.current = renderer;
-
-      // Lights
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
-      scene.add(ambientLight);
-
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-      directionalLight.position.set(150, 150, 150);
-      directionalLight.castShadow = true;
-      directionalLight.shadow.mapSize.width = 2048;
-      directionalLight.shadow.mapSize.height = 2048;
-      directionalLight.shadow.camera.far = 1000;
-      scene.add(directionalLight);
-
-      const pointLight = new THREE.PointLight(0xffffff, 0.5);
-      pointLight.position.set(-150, 100, 150);
-      scene.add(pointLight);
-
-      // Cylinder geometry
-      const radiusMm = safeDiameterMm / 2;
-      const geometry = new THREE.CylinderGeometry(radiusMm, radiusMm, safeHeightMm, 64, 32);
-
-      // Create initial material with placeholder texture
-      const placeholderTexture = createPlaceholderTexture(radiusMm * 2 * Math.PI, safeHeightMm);
-      const material = new THREE.MeshPhongMaterial({
-        map: placeholderTexture,
-        side: THREE.FrontSide,
-        shininess: 30
-      });
-
-      const cylinder = new THREE.Mesh(geometry, material);
-      cylinder.castShadow = true;
-      cylinder.receiveShadow = true;
-      scene.add(cylinder);
-      cylinderRef.current = cylinder;
-
-      // Update texture if design params provided
-      if (designParams) {
-        updateCylinderTexture(cylinder, radiusMm, safeHeightMm, designParams).catch(console.error);
-      }
-
-      // Ground plane
-      const groundGeometry = new THREE.PlaneGeometry(600, 600);
-      const groundMaterial = new THREE.ShadowMaterial({ opacity: 0.3 });
-      const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-      ground.rotation.x = -Math.PI / 2;
-      ground.position.y = -safeHeightMm / 2 - 20;
-      ground.receiveShadow = true;
-      scene.add(ground);
-
-      // Mouse event listeners
-      const onMouseDown = (e: MouseEvent) => {
-        mouseStateRef.current.isDown = true;
-        mouseStateRef.current.startX = e.clientX;
-        mouseStateRef.current.startY = e.clientY;
-        renderer.domElement.style.cursor = "grabbing";
-      };
-
-      const onMouseMove = (e: MouseEvent) => {
-        if (!mouseStateRef.current.isDown || !renderer.domElement) return;
-
-        const deltaX = e.clientX - mouseStateRef.current.startX;
-        const deltaY = e.clientY - mouseStateRef.current.startY;
-
-        mouseStateRef.current.targetRotationY += deltaX * 0.005;
-        mouseStateRef.current.targetRotationX += deltaY * 0.005;
-
-        mouseStateRef.current.startX = e.clientX;
-        mouseStateRef.current.startY = e.clientY;
-      };
-
-      const onMouseUp = () => {
-        mouseStateRef.current.isDown = false;
-        if (renderer.domElement) {
-          renderer.domElement.style.cursor = "grab";
-        }
-      };
-
-      const onWheel = (e: WheelEvent) => {
-        e.preventDefault();
-        const zoomSpeed = 15;
-        const direction = e.deltaY > 0 ? 1 : -1;
-        mouseStateRef.current.zoom += direction * zoomSpeed;
-        mouseStateRef.current.zoom = Math.max(100, Math.min(600, mouseStateRef.current.zoom));
-      };
-
-      const onMouseEnter = () => {
-        if (renderer.domElement) {
-          renderer.domElement.style.cursor = "grab";
-        }
-      };
-
-      const onMouseLeave = () => {
-        mouseStateRef.current.isDown = false;
-        if (renderer.domElement) {
-          renderer.domElement.style.cursor = "default";
-        }
-      };
-
-      renderer.domElement.addEventListener("mousedown", onMouseDown);
-      renderer.domElement.addEventListener("mousemove", onMouseMove);
-      renderer.domElement.addEventListener("mouseup", onMouseUp);
-      renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
-      renderer.domElement.addEventListener("mouseenter", onMouseEnter);
-      renderer.domElement.addEventListener("mouseleave", onMouseLeave);
-
-      // Animation loop
-      let animationId: number;
-      const animate = () => {
-        animationId = requestAnimationFrame(animate);
-
-        if (cylinderRef.current && cameraRef.current) {
-          // Smooth rotation towards target
-          mouseStateRef.current.rotationX += (mouseStateRef.current.targetRotationX - mouseStateRef.current.rotationX) * 0.15;
-          mouseStateRef.current.rotationY += (mouseStateRef.current.targetRotationY - mouseStateRef.current.rotationY) * 0.15;
-
-          // Clamp X rotation to prevent flipping
-          mouseStateRef.current.rotationX = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, mouseStateRef.current.rotationX));
-
-          cylinderRef.current.rotation.x = mouseStateRef.current.rotationX;
-          cylinderRef.current.rotation.y = mouseStateRef.current.rotationY;
-
-          // Update camera zoom
-          cameraRef.current.position.z = mouseStateRef.current.zoom;
-        }
-
-        renderer.render(scene, camera);
-      };
-      animate();
-      animationIdRef.current = animationId;
-
-      // Handle resize
-      const handleResize = () => {
-        if (!containerRef.current || !cameraRef.current || !rendererRef.current) return;
-        const newWidth = containerRef.current.clientWidth;
-        const newHeight = containerRef.current.clientHeight;
-        cameraRef.current.aspect = newWidth / newHeight;
-        cameraRef.current.updateProjectionMatrix();
-        rendererRef.current.setSize(newWidth, newHeight);
-      };
-      window.addEventListener("resize", handleResize);
-
-      setIsLoading(false);
-
-      // Cleanup
-      return () => {
-        window.removeEventListener("resize", handleResize);
-        renderer.domElement.removeEventListener("mousedown", onMouseDown);
-        renderer.domElement.removeEventListener("mousemove", onMouseMove);
-        renderer.domElement.removeEventListener("mouseup", onMouseUp);
-        renderer.domElement.removeEventListener("wheel", onWheel);
-        renderer.domElement.removeEventListener("mouseenter", onMouseEnter);
-        renderer.domElement.removeEventListener("mouseleave", onMouseLeave);
-        if (animationIdRef.current) cancelAnimationFrame(animationIdRef.current);
-        if (containerRef.current?.contains(renderer.domElement)) {
-          containerRef.current.removeChild(renderer.domElement);
-        }
-        geometry.dispose();
-        material.dispose();
-        placeholderTexture.dispose();
-        renderer.dispose();
-      };
-    } catch (error) {
-      console.error("Error in TumblerPreview3D:", error);
-      setIsLoading(false);
-    }
-  }, [safeDiameterMm, safeHeightMm]);
-
-  // Update texture when design params change
-  useEffect(() => {
-    if (!cylinderRef.current || !designParams) return;
-
-    const updateTexture = async () => {
+    const initThree = async () => {
       try {
+        setIsLoading(true);
+        
+        // Dynamically import Three.js
+        const THREE = await import("three");
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a2e);
+
+        // Camera
+        const width = containerRef.current!.clientWidth;
+        const height = containerRef.current!.clientHeight;
+        const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+        camera.position.set(0, 0, 250);
+        camera.lookAt(0, 0, 0);
+
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(width, height);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        containerRef.current.appendChild(renderer.domElement);
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(150, 150, 150);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+
+        const pointLight = new THREE.PointLight(0xffffff, 0.5);
+        pointLight.position.set(-150, 100, 150);
+        scene.add(pointLight);
+
+        // Cylinder
         const radiusMm = safeDiameterMm / 2;
-        await updateCylinderTexture(cylinderRef.current!, radiusMm, safeHeightMm, designParams);
-      } catch (error) {
-        console.error("Failed to update texture:", error);
+        const geometry = new THREE.CylinderGeometry(radiusMm, radiusMm, safeHeightMm, 64, 32);
+
+        // Create placeholder texture
+        const canvas = document.createElement("canvas");
+        canvas.width = 500;
+        canvas.height = 300;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.fillStyle = "#34495e";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "#ecf0f1";
+          ctx.font = "24px Arial";
+          ctx.textAlign = "center";
+          ctx.fillText("Upload Design", canvas.width / 2, canvas.height / 2);
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.MeshPhongMaterial({ map: texture, shininess: 30 });
+
+        const cylinder = new THREE.Mesh(geometry, material);
+        cylinder.castShadow = true;
+        cylinder.receiveShadow = true;
+        scene.add(cylinder);
+
+        // Ground
+        const groundGeometry = new THREE.PlaneGeometry(600, 600);
+        const groundMaterial = new THREE.ShadowMaterial({ opacity: 0.3 });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -safeHeightMm / 2 - 20;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Mouse state
+        let isDown = false;
+        let startX = 0;
+        let startY = 0;
+        let rotX = 0;
+        let rotY = 0;
+        let targetRotX = 0;
+        let targetRotY = 0;
+        let zoom = 250;
+
+        // Mouse events
+        const onMouseDown = (e: MouseEvent) => {
+          isDown = true;
+          startX = e.clientX;
+          startY = e.clientY;
+          renderer.domElement.style.cursor = "grabbing";
+        };
+
+        const onMouseMove = (e: MouseEvent) => {
+          if (!isDown) return;
+          const deltaX = e.clientX - startX;
+          const deltaY = e.clientY - startY;
+          targetRotY += deltaX * 0.005;
+          targetRotX += deltaY * 0.005;
+          startX = e.clientX;
+          startY = e.clientY;
+        };
+
+        const onMouseUp = () => {
+          isDown = false;
+          renderer.domElement.style.cursor = "grab";
+        };
+
+        const onWheel = (e: WheelEvent) => {
+          e.preventDefault();
+          zoom += (e.deltaY > 0 ? 1 : -1) * 15;
+          zoom = Math.max(100, Math.min(600, zoom));
+        };
+
+        const onMouseEnter = () => {
+          renderer.domElement.style.cursor = "grab";
+        };
+
+        const onMouseLeave = () => {
+          isDown = false;
+          renderer.domElement.style.cursor = "default";
+        };
+
+        renderer.domElement.addEventListener("mousedown", onMouseDown);
+        renderer.domElement.addEventListener("mousemove", onMouseMove);
+        renderer.domElement.addEventListener("mouseup", onMouseUp);
+        renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
+        renderer.domElement.addEventListener("mouseenter", onMouseEnter);
+        renderer.domElement.addEventListener("mouseleave", onMouseLeave);
+
+        // Animation loop
+        const animate = () => {
+          requestAnimationFrame(animate);
+
+          rotX += (targetRotX - rotX) * 0.15;
+          rotY += (targetRotY - rotY) * 0.15;
+          rotX = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, rotX));
+
+          cylinder.rotation.x = rotX;
+          cylinder.rotation.y = rotY;
+          camera.position.z = zoom;
+
+          renderer.render(scene, camera);
+        };
+        animate();
+
+        // Resize handler
+        const handleResize = () => {
+          if (!containerRef.current) return;
+          const newWidth = containerRef.current.clientWidth;
+          const newHeight = containerRef.current.clientHeight;
+          camera.aspect = newWidth / newHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(newWidth, newHeight);
+        };
+
+        window.addEventListener("resize", handleResize);
+
+        setIsLoading(false);
+
+        return () => {
+          window.removeEventListener("resize", handleResize);
+          renderer.domElement.removeEventListener("mousedown", onMouseDown);
+          renderer.domElement.removeEventListener("mousemove", onMouseMove);
+          renderer.domElement.removeEventListener("mouseup", onMouseUp);
+          renderer.domElement.removeEventListener("wheel", onWheel);
+          renderer.domElement.removeEventListener("mouseenter", onMouseEnter);
+          renderer.domElement.removeEventListener("mouseleave", onMouseLeave);
+          if (containerRef.current?.contains(renderer.domElement)) {
+            containerRef.current.removeChild(renderer.domElement);
+          }
+          geometry.dispose();
+          material.dispose();
+          texture.dispose();
+          renderer.dispose();
+        };
+      } catch (err) {
+        console.error("Error initializing Three.js:", err);
+        setError(err instanceof Error ? err.message : "Failed to load 3D view");
+        setIsLoading(false);
       }
     };
 
-    updateTexture();
-  }, [designParams, safeDiameterMm, safeHeightMm]);
+    initThree();
+  }, [safeDiameterMm, safeHeightMm]);
+
+  if (error) {
+    return (
+      <div className="relative h-full w-full rounded bg-red-900/20 flex items-center justify-center" style={{ minHeight: "420px" }}>
+        <p className="text-sm text-red-200">Error: {error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="relative h-full w-full rounded bg-slate-900 overflow-hidden" style={{ minHeight: "420px" }}>
       <div ref={containerRef} className="h-full w-full" />
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded">
-          <p className="text-sm text-white">Loading...</p>
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded">
+          <p className="text-sm text-white">Loading 3D...</p>
         </div>
       )}
       <div className="absolute bottom-2 left-2 text-xs text-slate-300 pointer-events-none bg-black/40 px-2 py-1 rounded">
@@ -270,89 +236,4 @@ export default function TumblerPreview3D({
       </div>
     </div>
   );
-}
-
-/**
- * Create a placeholder texture with grid and text
- */
-function createPlaceholderTexture(widthMm: number, heightMm: number, mmScale = 3): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.ceil(widthMm * mmScale);
-  canvas.height = Math.ceil(heightMm * mmScale);
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Failed to get canvas context");
-
-  // Gradient background
-  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-  gradient.addColorStop(0, "#2d3e50");
-  gradient.addColorStop(1, "#34495e");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Grid
-  ctx.strokeStyle = "rgba(255,255,255,0.1)";
-  ctx.lineWidth = 1;
-  const gridPx = 10 * mmScale;
-  for (let x = 0; x <= canvas.width; x += gridPx) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
-    ctx.stroke();
-  }
-
-  // Seam line
-  ctx.strokeStyle = "rgba(255, 0, 0, 0.4)";
-  ctx.lineWidth = 2;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(0, canvas.height);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(canvas.width - 1, 0);
-  ctx.lineTo(canvas.width - 1, canvas.height);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Text
-  ctx.fillStyle = "#ecf0f1";
-  ctx.font = "bold 24px Arial";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("Upload Design", canvas.width / 2, canvas.height / 2 - 30);
-  ctx.font = "14px Arial";
-  ctx.fillText("(will wrap around)", canvas.width / 2, canvas.height / 2 + 20);
-
-  return new THREE.CanvasTexture(canvas);
-}
-
-/**
- * Update cylinder texture with design
- */
-async function updateCylinderTexture(
-  cylinder: THREE.Mesh,
-  radiusMm: number,
-  heightMm: number,
-  designParams: DesignParams
-): Promise<void> {
-  const circumMm = radiusMm * 2 * Math.PI;
-
-  // Create texture canvas
-  const textureCanvas = await createCylinderTexture({
-    circumferenceMm: circumMm,
-    heightMm,
-    designParams
-  });
-
-  // Convert to Three.js texture
-  const texture = new THREE.CanvasTexture(textureCanvas);
-  texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearFilter;
-
-  // Update material
-  const material = cylinder.material as THREE.MeshPhongMaterial;
-  if (material.map) material.map.dispose();
-  material.map = texture;
-  material.needsUpdate = true;
 }
