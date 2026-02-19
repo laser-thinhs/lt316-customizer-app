@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Props = {
   diameterMm?: number | null;
@@ -29,9 +29,10 @@ export default function TumblerPreview3D({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string>("");
-  const resolvedDesignParams = designSvgUrl
-    ? { ...(designParams ?? {}), assetUrl: designSvgUrl }
-    : designParams;
+  const resolvedDesignParams = useMemo(
+    () => (designSvgUrl ? { ...(designParams ?? {}), assetUrl: designSvgUrl } : designParams),
+    [designParams, designSvgUrl]
+  );
 
   // Ensure all values are valid numbers
   const safeDiameterMm = typeof diameterMm === "number" && isFinite(diameterMm) ? diameterMm : 76.2;
@@ -65,6 +66,7 @@ export default function TumblerPreview3D({
         renderer.setSize(width, height);
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.shadowMap.enabled = true;
+        container.innerHTML = "";
         container.appendChild(renderer.domElement);
 
         // Lights
@@ -83,7 +85,9 @@ export default function TumblerPreview3D({
         // Cylinder
         const radiusMm = safeDiameterMm / 2;
         const circumMm = radiusMm * 2 * Math.PI;
-        const mmScale = 3;
+        const mmScale = typeof resolvedDesignParams?.mmScale === "number" && isFinite(resolvedDesignParams.mmScale)
+          ? resolvedDesignParams.mmScale
+          : 3;
         const geometry = new THREE.CylinderGeometry(radiusMm, radiusMm, safeHeightMm, 64, 32);
 
         // Create texture canvas
@@ -110,10 +114,10 @@ export default function TumblerPreview3D({
               setDebugInfo(`Image loaded successfully: ${img.width}x${img.height}`);
               
               const x = (resolvedDesignParams.xMm || 0) * mmScale;
-              const y = (resolvedDesignParams.yMm || 0) * mmScale;
+              const y = (resolvedDesignParams.yMm ?? offsetYMm ?? 0) * mmScale;
               const w = (resolvedDesignParams.widthMm || 100) * mmScale;
               const h = (resolvedDesignParams.heightMm || 100) * mmScale;
-              const rot = ((resolvedDesignParams.rotationDeg || 0) * Math.PI) / 180;
+              const rot = (((resolvedDesignParams.rotationDeg ?? rotationDeg ?? 0) * Math.PI) / 180);
 
               ctx.save();
               ctx.globalAlpha = resolvedDesignParams.opacity || 1;
@@ -301,7 +305,7 @@ export default function TumblerPreview3D({
     };
 
     initThree();
-  }, [safeDiameterMm, safeHeightMm, designParams]);
+  }, [safeDiameterMm, safeHeightMm, resolvedDesignParams, textureReloadKey, rotationDeg, offsetYMm]);
 
   if (error) {
     return (
