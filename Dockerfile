@@ -15,6 +15,7 @@ RUN npm prune --omit=dev
 FROM node:20-alpine AS runner
 WORKDIR /app
 RUN apk upgrade --no-cache
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 ENV NODE_ENV=production
 ENV PORT=3000
@@ -27,4 +28,4 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/next.config.ts ./next.config.ts
 
 EXPOSE 3000
-CMD ["npm", "run", "start", "--", "-H", "0.0.0.0", "-p", "3000"]
+CMD ["node", "./node_modules/next/dist/bin/next", "start", "-H", "0.0.0.0", "-p", "3000"]
