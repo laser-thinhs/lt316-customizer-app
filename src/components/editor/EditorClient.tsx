@@ -427,8 +427,20 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
         <TumblerPreview3D
           diameterMm={profile.diameterMm}
           heightMm={profile.engraveZoneHeightMm}
+          designParams={activeAsset ? {
+            canvasWidth: derived.zone.widthMm,
+            canvasHeight: derived.zone.heightMm,
+            assetUrl: activeAsset.url,
+            assetType: activeAsset.mime?.includes('svg') ? 'svg' : 'image',
+            xMm: store.placement.offsetXMm,
+            yMm: store.placement.offsetYMm,
+            widthMm: store.placement.widthMm,
+            heightMm: store.placement.heightMm,
+            rotationDeg: store.placement.rotationDeg,
+            opacity: 1,
+            mmScale: 3
+          } : null}
           rotationDeg={store.placement.rotationDeg}
-          onRotationDegChange={(value) => store.patchPlacement({ rotationDeg: value })}
           offsetYMm={store.placement.offsetYMm}
           engraveZoneHeightMm={profile.engraveZoneHeightMm}
         />
