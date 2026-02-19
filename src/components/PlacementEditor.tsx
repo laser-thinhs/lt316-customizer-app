@@ -15,6 +15,7 @@ import type { JobAssetExportResponse, PreflightResult } from "@/schemas/prefligh
 import { buildDefaultImagePlacement } from "@/lib/placement/image-insertion";
 import { useAutosavePlacement } from "@/hooks/useAutosavePlacement";
 import { arePlacementsEqual } from "@/lib/placement/stableCompare";
+import { CanonicalSvgArtwork, canonicalizeSvgArtwork } from "@/lib/svg-artwork";
 import InspectorPanel from "@/components/editor/InspectorPanel";
 import WrapCanvas, { WrapCanvasObject } from "@/components/editor/WrapCanvas";
 
@@ -42,15 +43,18 @@ type ApiAsset = {
 
 const curatedFonts = ["Inter", "Roboto Mono"];
 
-const TumblerPreview3D = dynamic(() => import("@/components/editor/TumblerPreview3D"), {
+const GlbPreview = dynamic(() => import("@/components/editor/GlbPreview"), {
   ssr: false
 });
 
 type TransformField = "xMm" | "yMm" | "widthMm" | "heightMm" | "rotationDeg";
 type TransformValues = Record<TransformField, string>;
+type PreviewMode = "2d" | "3d";
+type ActiveArtworkSvg = CanonicalSvgArtwork & { assetId: string };
 
 const defaultTransformValues: TransformValues = { xMm: "", yMm: "", widthMm: "", heightMm: "", rotationDeg: "" };
 const defaultModelImageUrl = "/models/tumbler-preview.svg";
+const svgOnlyMessage = "SVG-only for now; raster support coming next.";
 
 function randomId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -166,8 +170,12 @@ export default function PlacementEditor({ designJobId, placement, modelImageUrl,
   const [showCenterlines, setShowCenterlines] = useState(true);
   const [showSafeMargin, setShowSafeMargin] = useState(true);
   const [keepAspectResize, setKeepAspectResize] = useState(true);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("2d");
+  const [textureSizePx, setTextureSizePx] = useState<1024 | 2048>(2048);
   const canvasPreviewScale = 0.25;
   const canvasPreviewDpi = Math.max(1, canvasDpi * canvasPreviewScale);
+  const previewModelAssetKey = "default-v1";
+  const [activeArtworkSvg, setActiveArtworkSvg] = useState<ActiveArtworkSvg | null>(null);
   const [isArtworkDragging, setArtworkDragging] = useState(false);
   const [isUploadingArtwork, setUploadingArtwork] = useState(false);
   const [selectedArtworkFile, setSelectedArtworkFile] = useState<{ name: string; size: number } | null>(null);
@@ -175,7 +183,6 @@ export default function PlacementEditor({ designJobId, placement, modelImageUrl,
   const artworkInputRef = useRef<HTMLInputElement>(null);
   const textContentInputRef = useRef<HTMLTextAreaElement>(null);
   const shouldFocusTextInputRef = useRef(false);
-  const canRender3DPreview = process.env.NODE_ENV !== "test";
   const resolvedModelImageUrl = modelImageUrl && modelImageUrl.trim().length > 0 ? modelImageUrl : defaultModelImageUrl;
   const resolvedModelMaskUrl = modelMaskUrl && modelMaskUrl.trim().length > 0 ? modelMaskUrl : null;
   const previewOverlayStyle: CSSProperties | undefined = resolvedModelMaskUrl ? {
@@ -276,28 +283,47 @@ export default function PlacementEditor({ designJobId, placement, modelImageUrl,
     });
   }, [doc.objects]);
 
-  const previewDesignParams = useMemo(() => {
-    const previewImage = isImageObject(selected)
-      ? selected
-      : doc.objects.find((entry): entry is ImagePlacementObject => entry.kind === "image");
-
-    if (!previewImage) {
-      return null;
-    }
-
-    return {
-      assetUrl: `/api/assets/${previewImage.assetId}`,
-      xMm: previewImage.xMm,
-      yMm: previewImage.yMm,
-      widthMm: previewImage.widthMm,
-      heightMm: previewImage.heightMm,
-      rotationDeg: previewImage.rotationDeg,
-      opacity: previewImage.opacity,
-      mmScale: 3
-    };
+  const activePreviewImageObject = useMemo(() => {
+    if (isImageObject(selected)) return selected;
+    return doc.objects.find((entry): entry is ImagePlacementObject => entry.kind === "image") ?? null;
   }, [doc.objects, selected]);
 
-  const previewAssetUrl = previewDesignParams?.assetUrl ?? "";
+  useEffect(() => {
+    const assetId = activePreviewImageObject?.assetId;
+    if (!assetId) {
+      setActiveArtworkSvg(null);
+      return;
+    }
+
+    const asset = assets.find((entry) => entry.id === assetId);
+    if (!asset || asset.mimeType !== "image/svg+xml") {
+      setActiveArtworkSvg(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSvgArtwork = async () => {
+      try {
+        const response = await fetch(`/api/assets/${assetId}`);
+        if (!response.ok) throw new Error("Failed to load SVG artwork.");
+        const svgText = await response.text();
+        const canonical = canonicalizeSvgArtwork(svgText);
+        if (cancelled) return;
+        setActiveArtworkSvg({ assetId, ...canonical });
+      } catch {
+        if (!cancelled) {
+          setActiveArtworkSvg(null);
+        }
+      }
+    };
+
+    void loadSvgArtwork();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePreviewImageObject?.assetId, assets]);
 
   const commitDoc = (next: PlacementDocument) => {
     setUndoStack((prev) => [...prev.slice(-29), doc]);
@@ -501,6 +527,13 @@ export default function PlacementEditor({ designJobId, placement, modelImageUrl,
   };
 
   const uploadArtworkFile = async (file: File) => {
+    const isSvg = file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
+    if (!isSvg) {
+      setArtworkUploadError(svgOnlyMessage);
+      setStatusMessage(svgOnlyMessage);
+      return;
+    }
+
     setArtworkUploadError(null);
     setSelectedArtworkFile({ name: file.name, size: file.size });
     setUploadingArtwork(true);
@@ -557,6 +590,12 @@ export default function PlacementEditor({ designJobId, placement, modelImageUrl,
   };
 
   const onAddAssetToCanvas = (asset: ApiAsset) => {
+    if (asset.mimeType !== "image/svg+xml") {
+      setArtworkUploadError(svgOnlyMessage);
+      setStatusMessage(svgOnlyMessage);
+      return;
+    }
+
     try {
       const imageObj: ImagePlacementObject = {
         ...buildDefaultImagePlacement({
@@ -583,7 +622,7 @@ export default function PlacementEditor({ designJobId, placement, modelImageUrl,
     <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="space-y-1">
         <h3 className="text-sm font-semibold text-black">Artwork Assets</h3>
-        <p className="text-xs text-black">Upload your artwork for this job. Supported: SVG, PNG, JPG.</p>
+        <p className="text-xs text-black">Upload your artwork for this job. Supported: SVG only.</p>
       </div>
       <div
         role="button"
@@ -633,7 +672,7 @@ export default function PlacementEditor({ designJobId, placement, modelImageUrl,
         <input
           ref={artworkInputRef}
           type="file"
-          accept=".svg,.png,.jpg,.jpeg,.webp"
+          accept=".svg,image/svg+xml"
           className="sr-only"
           onChange={onUploadArtwork}
         />
@@ -939,66 +978,84 @@ export default function PlacementEditor({ designJobId, placement, modelImageUrl,
           <section className="space-y-3 rounded border border-slate-200 bg-slate-50 p-3 lg:max-h-[52vh] lg:overflow-auto">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold">Canvas Preview</h3>
-              <label className="text-xs">DPI
-                <input type="number" min={72} step={1} value={canvasDpi} onChange={(event) => setCanvasDpi(Math.max(72, Number(event.target.value) || 96))} className="ml-2 w-20 rounded border px-2 py-1" />
-              </label>
-            </div>
-            <div className="flex flex-wrap gap-3 text-xs">
-              <label className="flex items-center gap-1"><input type="checkbox" checked={gridEnabled} onChange={(event) => setGridEnabled(event.target.checked)} /> Grid</label>
-              <label className="flex items-center gap-1">Spacing
-                <select value={gridSpacingMm} onChange={(event) => setGridSpacingMm(Number(event.target.value) === 10 ? 10 : 5)} className="rounded border px-1 py-0.5">
-                  <option value={5}>5mm</option>
-                  <option value={10}>10mm</option>
-                </select>
-              </label>
-              <label className="flex items-center gap-1"><input type="checkbox" checked={showCenterlines} onChange={(event) => setShowCenterlines(event.target.checked)} /> Centerlines</label>
-              <label className="flex items-center gap-1"><input type="checkbox" checked={showSafeMargin} onChange={(event) => setShowSafeMargin(event.target.checked)} /> Safe margin</label>
-              <label className="flex items-center gap-1"><input type="checkbox" checked={keepAspectResize} onChange={(event) => setKeepAspectResize(event.target.checked)} /> Keep aspect resize</label>
-            </div>
-            <div className="relative overflow-hidden rounded border border-slate-200 bg-slate-100" style={{ aspectRatio: `${doc.canvas.widthMm} / ${doc.canvas.heightMm}` }}>
-              <img
-                src={resolvedModelImageUrl}
-                alt="Product model preview"
-                className="pointer-events-none absolute inset-0 h-full w-full object-contain"
-                draggable={false}
-              />
-              <div className="absolute inset-0 z-10 pointer-events-auto" style={previewOverlayStyle}>
-                <WrapCanvas
-                  template={{ widthMm: 300, heightMm: 300, safeMarginMm: 2 }}
-                  objects={canvasObjects}
-                  selectedId={selectedObjectId}
-                  dpi={canvasPreviewDpi}
-                  gridEnabled={gridEnabled}
-                  gridSpacingMm={gridSpacingMm}
-                  showCenterlines={showCenterlines}
-                  showSafeMargin={showSafeMargin}
-                  keepAspectRatio={keepAspectResize}
-                  displayMode="overlay"
-                  onSelect={setSelectedObjectId}
-                  onUpdateTransform={updateObjectTransform}
-                />
+              <div className="inline-flex rounded border border-slate-300 bg-white p-0.5 text-xs">
+                <button
+                  type="button"
+                  className={`rounded px-2 py-1 ${previewMode === "2d" ? "bg-slate-900 text-white" : "text-slate-700"}`}
+                  onClick={() => setPreviewMode("2d")}
+                >
+                  2D
+                </button>
+                <button
+                  type="button"
+                  className={`rounded px-2 py-1 ${previewMode === "3d" ? "bg-slate-900 text-white" : "text-slate-700"}`}
+                  onClick={() => setPreviewMode("3d")}
+                >
+                  3D
+                </button>
               </div>
             </div>
-            <p className="text-xs text-slate-600">Drag to move. Shift-drag locks axis. Arrow keys nudge 1mm (Shift = 5mm).</p>
+            {previewMode === "2d" ? (
+              <>
+                <div className="flex flex-wrap gap-3 text-xs">
+                  <label className="text-xs">DPI
+                    <input type="number" min={72} step={1} value={canvasDpi} onChange={(event) => setCanvasDpi(Math.max(72, Number(event.target.value) || 96))} className="ml-2 w-20 rounded border px-2 py-1" />
+                  </label>
+                  <label className="flex items-center gap-1"><input type="checkbox" checked={gridEnabled} onChange={(event) => setGridEnabled(event.target.checked)} /> Grid</label>
+                  <label className="flex items-center gap-1">Spacing
+                    <select value={gridSpacingMm} onChange={(event) => setGridSpacingMm(Number(event.target.value) === 10 ? 10 : 5)} className="rounded border px-1 py-0.5">
+                      <option value={5}>5mm</option>
+                      <option value={10}>10mm</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1"><input type="checkbox" checked={showCenterlines} onChange={(event) => setShowCenterlines(event.target.checked)} /> Centerlines</label>
+                  <label className="flex items-center gap-1"><input type="checkbox" checked={showSafeMargin} onChange={(event) => setShowSafeMargin(event.target.checked)} /> Safe margin</label>
+                  <label className="flex items-center gap-1"><input type="checkbox" checked={keepAspectResize} onChange={(event) => setKeepAspectResize(event.target.checked)} /> Keep aspect resize</label>
+                </div>
+                <div className="relative overflow-hidden rounded border border-slate-200 bg-slate-100" style={{ aspectRatio: `${doc.canvas.widthMm} / ${doc.canvas.heightMm}` }}>
+                  <img
+                    src={resolvedModelImageUrl}
+                    alt="Product model preview"
+                    className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+                    draggable={false}
+                  />
+                  <div className="absolute inset-0 z-10 pointer-events-auto" style={previewOverlayStyle}>
+                    <WrapCanvas
+                      template={{ widthMm: 300, heightMm: 300, safeMarginMm: 2 }}
+                      objects={canvasObjects}
+                      selectedId={selectedObjectId}
+                      dpi={canvasPreviewDpi}
+                      gridEnabled={gridEnabled}
+                      gridSpacingMm={gridSpacingMm}
+                      showCenterlines={showCenterlines}
+                      showSafeMargin={showSafeMargin}
+                      keepAspectRatio={keepAspectResize}
+                      displayMode="overlay"
+                      onSelect={setSelectedObjectId}
+                      onUpdateTransform={updateObjectTransform}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-slate-600">Drag to move. Shift-drag locks axis. Arrow keys nudge 1mm (Shift = 5mm).</p>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <label className="text-xs">Texture size
+                    <select value={textureSizePx} onChange={(event) => setTextureSizePx(event.target.value === "1024" ? 1024 : 2048)} className="ml-2 rounded border px-2 py-1">
+                      <option value="1024">1024</option>
+                      <option value="2048">2048</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="overflow-hidden rounded border border-slate-200 bg-slate-900" style={{ height: "420px" }}>
+                  <GlbPreview assetKey={previewModelAssetKey} artwork={activeArtworkSvg} textureSizePx={textureSizePx} />
+                </div>
+                <p className="text-xs text-slate-600">Model path: /public/model-assets/{previewModelAssetKey}/model.glb</p>
+                {!activeArtworkSvg ? <p className="text-xs text-amber-700">Upload SVG artwork and add it to canvas to texture WrapArea.</p> : null}
+              </>
+            )}
           </section>
-
-          {canRender3DPreview ? (
-            <section className="space-y-3 rounded border border-slate-200 bg-slate-50 p-3 lg:max-h-[52vh] lg:overflow-auto">
-              <h3 className="text-sm font-semibold">3D Preview</h3>
-              <div className="h-[420px] overflow-hidden rounded border border-slate-200 bg-slate-900">
-                <TumblerPreview3D
-                  diameterMm={doc.canvas.widthMm / Math.PI}
-                  heightMm={doc.canvas.heightMm}
-                  designParams={previewDesignParams}
-                  designSvgUrl={previewAssetUrl}
-                  rotationDeg={selected?.rotationDeg ?? 0}
-                  offsetYMm={isImageObject(selected) ? selected.yMm : isTextObject(selected) ? selected.offsetYMm : 0}
-                  engraveZoneHeightMm={doc.canvas.heightMm}
-                />
-              </div>
-              <p className="text-xs text-slate-600">Uses selected artwork when available; otherwise first uploaded image.</p>
-            </section>
-          ) : null}
         </div>
 
         <div className="order-2 min-h-0 space-y-3 overflow-auto pr-1 lg:order-3">

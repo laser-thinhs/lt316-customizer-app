@@ -3,8 +3,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { AppError } from "@/lib/errors";
 
-const ALLOWED_EXTENSIONS = new Set([".svg", ".png", ".jpg", ".jpeg", ".webp"]);
-const ALLOWED_MIME = new Set(["image/svg+xml", "image/png", "image/jpeg", "image/webp"]);
+const ALLOWED_EXTENSIONS = new Set([".svg"]);
+const ALLOWED_MIME = new Set(["image/svg+xml"]);
 
 export type UploadMime = "image/svg+xml" | "image/png" | "image/jpeg" | "image/webp";
 
@@ -31,7 +31,7 @@ export function assertSupportedUpload(fileName: string, mimeType: string) {
   const ext = path.extname(fileName).toLowerCase();
   if (!ALLOWED_EXTENSIONS.has(ext) || !ALLOWED_MIME.has(mimeType)) {
     throw new AppError(
-      "Unsupported file type. Allowed: svg, png, jpg, jpeg, webp.",
+      "SVG-only for now; raster support coming next.",
       400,
       "UNSUPPORTED_FILE_TYPE"
     );
