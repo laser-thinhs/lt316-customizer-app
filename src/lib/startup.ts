@@ -41,8 +41,9 @@ export async function runStartupChecks() {
   } catch (error) {
     const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
     const skipCheck = process.env.SKIP_STARTUP_DB_CHECK === "1";
+    const isNonProduction = process.env.NODE_ENV !== "production";
 
-    if (isBuildPhase || skipCheck) {
+    if (isBuildPhase || skipCheck || isNonProduction) {
       console.warn("Startup database check skipped during build/override:", error);
       startupChecksRan = true;
       return;
