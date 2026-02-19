@@ -6,6 +6,7 @@ type Props = {
   diameterMm?: number | null;
   heightMm?: number | null;
   designParams?: any;
+  designSvgUrl?: string | null;
   rotationDeg?: number | null;
   offsetYMm?: number | null;
   engraveZoneHeightMm?: number | null;
@@ -17,6 +18,7 @@ export default function TumblerPreview3D({
   diameterMm = 76.2,
   heightMm = 100,
   designParams,
+  designSvgUrl,
   rotationDeg = 0,
   offsetYMm = 0,
   engraveZoneHeightMm = 100,
@@ -27,18 +29,22 @@ export default function TumblerPreview3D({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string>("");
+  const resolvedDesignParams = designSvgUrl
+    ? { ...(designParams ?? {}), assetUrl: designSvgUrl }
+    : designParams;
 
   // Ensure all values are valid numbers
   const safeDiameterMm = typeof diameterMm === "number" && isFinite(diameterMm) ? diameterMm : 76.2;
   const safeHeightMm = typeof heightMm === "number" && isFinite(heightMm) ? heightMm : 100;
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
 
     const initThree = async () => {
       try {
         setIsLoading(true);
-        setDebugInfo(`Initializing... designParams: ${JSON.stringify(designParams)}`);
+        setDebugInfo(`Initializing... designParams: ${JSON.stringify(resolvedDesignParams)}`);
         
         // Dynamically import Three.js
         const THREE = await import("three");
@@ -48,8 +54,8 @@ export default function TumblerPreview3D({
         scene.background = new THREE.Color(0x1a1a2e);
 
         // Camera
-        const width = containerRef.current!.clientWidth;
-        const height = containerRef.current!.clientHeight;
+        const width = container.clientWidth;
+        const height = container.clientHeight;
         const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
         camera.position.set(0, 0, 250);
         camera.lookAt(0, 0, 0);
@@ -59,7 +65,7 @@ export default function TumblerPreview3D({
         renderer.setSize(width, height);
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.shadowMap.enabled = true;
-        containerRef.current.appendChild(renderer.domElement);
+        container.appendChild(renderer.domElement);
 
         // Lights
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
@@ -93,8 +99,8 @@ export default function TumblerPreview3D({
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         // Draw image if available
-        if (designParams?.assetUrl) {
-          setDebugInfo(`Loading image from: ${designParams.assetUrl}`);
+        if (resolvedDesignParams?.assetUrl) {
+          setDebugInfo(`Loading image from: ${resolvedDesignParams.assetUrl}`);
           
           const img = new Image();
           img.crossOrigin = "anonymous";
@@ -103,14 +109,14 @@ export default function TumblerPreview3D({
             img.onload = () => {
               setDebugInfo(`Image loaded successfully: ${img.width}x${img.height}`);
               
-              const x = (designParams.xMm || 0) * mmScale;
-              const y = (designParams.yMm || 0) * mmScale;
-              const w = (designParams.widthMm || 100) * mmScale;
-              const h = (designParams.heightMm || 100) * mmScale;
-              const rot = ((designParams.rotationDeg || 0) * Math.PI) / 180;
+              const x = (resolvedDesignParams.xMm || 0) * mmScale;
+              const y = (resolvedDesignParams.yMm || 0) * mmScale;
+              const w = (resolvedDesignParams.widthMm || 100) * mmScale;
+              const h = (resolvedDesignParams.heightMm || 100) * mmScale;
+              const rot = ((resolvedDesignParams.rotationDeg || 0) * Math.PI) / 180;
 
               ctx.save();
-              ctx.globalAlpha = designParams.opacity || 1;
+              ctx.globalAlpha = resolvedDesignParams.opacity || 1;
 
               // Rotate around center
               const centerX = x + w / 2;
@@ -128,7 +134,7 @@ export default function TumblerPreview3D({
               setDebugInfo(`Image load error: ${err}`);
               reject(new Error("Failed to load image"));
             };
-            img.src = designParams.assetUrl;
+            img.src = resolvedDesignParams.assetUrl;
           });
         } else {
           setDebugInfo("No asset URL provided");
