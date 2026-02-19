@@ -17,7 +17,7 @@ export type SectionDefinition<TSettings> = {
   type: SectionType;
   label: string;
   defaultSettings: TSettings;
-  settingsSchema: z.ZodType<TSettings>;
+  settingsSchema: z.ZodType<TSettings, z.ZodTypeDef, unknown>;
   fields: SettingsFieldDefinition[];
   render(settings: TSettings): React.ReactNode;
 };
