@@ -9,6 +9,8 @@ type Props = {
   rotationDeg?: number | null;
   offsetYMm?: number | null;
   engraveZoneHeightMm?: number | null;
+  onTextureErrorChange?: (message: string | null) => void;
+  textureReloadKey?: number;
 };
 
 export default function TumblerPreview3D({
@@ -17,7 +19,9 @@ export default function TumblerPreview3D({
   designParams,
   rotationDeg = 0,
   offsetYMm = 0,
-  engraveZoneHeightMm = 100
+  engraveZoneHeightMm = 100,
+  onTextureErrorChange,
+  textureReloadKey = 0
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);
