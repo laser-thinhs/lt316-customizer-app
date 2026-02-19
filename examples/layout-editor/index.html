@@ -1,0 +1,998 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Layout Editor Prototype</title>
+  <style>
+    :root {
+      --bg: #f3f4f6;
+      --panel: #ffffff;
+      --border: #d1d5db;
+      --text: #111827;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --success: #047857;
+      --danger: #b91c1c;
+      --radius: 10px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      height: 100vh;
+      display: grid;
+      grid-template-columns: 320px minmax(500px, 1fr) 360px;
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .panel-header {
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      background: #f8fafc;
+    }
+
+    .panel-title { font-size: 14px; font-weight: 700; margin: 0; }
+
+    .panel-body {
+      padding: 12px;
+      overflow: auto;
+      min-height: 0;
+    }
+
+    .button, button {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: white;
+      color: var(--text);
+      font-size: 13px;
+      cursor: pointer;
+      padding: 8px 10px;
+      line-height: 1;
+    }
+
+    .button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+    .button.success { background: var(--success); border-color: var(--success); color: white; }
+
+    .button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .stack-sm { display: flex; gap: 8px; align-items: center; }
+
+    .section-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .section-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: white;
+      padding: 10px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .section-card.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+    }
+
+    .section-card.drag-over {
+      outline: 2px dashed var(--accent);
+      outline-offset: 1px;
+    }
+
+    .drag-handle {
+      cursor: grab;
+      color: var(--muted);
+      font-size: 18px;
+      user-select: none;
+      padding: 2px 6px;
+    }
+
+    .section-label {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .section-meta {
+      font-size: 12px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+
+    .section-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .icon-btn {
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 8px;
+      font-size: 12px;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+    }
+
+    .icon-btn.active { background: #e0e7ff; border-color: #a5b4fc; }
+
+    .preview-shell {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+      max-width: 960px;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .preview-header {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      background: #f9fafb;
+    }
+
+    .preview-area {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .preview-section {
+      border-bottom: 1px solid #e5e7eb;
+      position: relative;
+    }
+
+    .preview-section.hidden {
+      display: none;
+    }
+
+    .preview-section.selected {
+      box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.25);
+    }
+
+    .preview-placeholder {
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
+      padding: 60px 20px;
+      border: 2px dashed #cbd5e1;
+      border-radius: 12px;
+      margin: 14px;
+    }
+
+    .field {
+      margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #374151;
+    }
+
+    input[type="text"], input[type="url"], input[type="number"], select, textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      font: inherit;
+      font-size: 13px;
+      background: #fff;
+    }
+
+    textarea { min-height: 100px; resize: vertical; }
+
+    .button-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .button-item {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      background: #f9fafb;
+    }
+
+    .muted-note { font-size: 12px; color: var(--muted); }
+
+    .hero {
+      min-height: 270px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      padding: 32px;
+      background-size: cover;
+      background-position: center;
+      position: relative;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, var(--hero-overlay, 0.4));
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      max-width: 640px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .hero-content.center { margin: 0 auto; text-align: center; }
+
+    .hero h1 { margin: 0; font-size: 36px; }
+    .hero p { margin: 0; font-size: 16px; opacity: 0.95; }
+
+    .hero a, .button-row a {
+      display: inline-block;
+      background: #fff;
+      color: #111827;
+      text-decoration: none;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      width: fit-content;
+    }
+
+    .rich-text {
+      padding: 28px;
+      line-height: 1.5;
+      font-size: 16px;
+      white-space: pre-wrap;
+    }
+
+    .image-text {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 220px;
+    }
+
+    .image-text img { width: 100%; height: 100%; object-fit: cover; }
+
+    .image-text-content {
+      padding: 24px;
+      display: grid;
+      align-content: center;
+      gap: 10px;
+    }
+
+    .button-row {
+      padding: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(17, 24, 39, 0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal {
+      width: min(400px, 95vw);
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .section-type-grid {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .section-type-btn {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fff;
+      cursor: pointer;
+      text-align: left;
+      display: grid;
+      gap: 4px;
+    }
+
+    .section-type-btn small { color: var(--muted); }
+
+    .hidden-badge {
+      font-size: 11px;
+      color: #92400e;
+      background: #ffedd5;
+      padding: 2px 6px;
+      border-radius: 999px;
+      margin-left: 6px;
+    }
+
+    @media (max-width: 1150px) {
+      .app { grid-template-columns: 1fr; height: auto; }
+      .panel { min-height: 280px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Sections</h2>
+        <div class="stack-sm">
+          <button id="addSectionBtn" class="button primary">Add section</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="field">
+          <label for="slugInput">Page slug</label>
+          <input id="slugInput" type="text" value="home" />
+        </div>
+        <div class="stack-sm" style="margin-bottom:12px;flex-wrap:wrap;">
+          <button id="saveBtn" class="button success">Save</button>
+          <button id="loadBtn" class="button">Load</button>
+          <button id="exportBtn" class="button">Export JSON</button>
+          <label class="button" for="importInput">Import JSON</label>
+          <input id="importInput" type="file" accept="application/json" style="display:none" />
+        </div>
+        <p class="muted-note">Local storage key: <code>layout:&lt;slug&gt;</code>.</p>
+        <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;" />
+        <div id="sectionList" class="section-list"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Live preview</h2>
+        <span class="muted-note">Click section to edit</span>
+      </div>
+      <div class="panel-body">
+        <div class="preview-shell">
+          <div class="preview-header" id="previewMeta"></div>
+          <div class="preview-area" id="previewArea"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Section settings</h2>
+      </div>
+      <div class="panel-body">
+        <div id="settingsPanel" class="muted-note">Select a section to edit settings.</div>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="addModalBackdrop" role="dialog" aria-modal="true" aria-labelledby="addModalTitle">
+    <div class="modal">
+      <h3 id="addModalTitle" style="margin:0;font-size:16px;">Add section</h3>
+      <div class="section-type-grid" id="sectionTypeGrid"></div>
+      <button class="button" id="closeModalBtn">Cancel</button>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const SECTION_DEFS = {
+        hero: {
+          label: 'Hero',
+          description: 'Banner with heading and CTA',
+          defaults: {
+            headline: 'Build beautiful pages fast',
+            subhead: 'A schema-driven layout editor prototype inspired by Shopify customizer.',
+            ctaText: 'Start now',
+            ctaHref: '#',
+            imageUrl: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=1400&q=80',
+            overlay: 0.45,
+            align: 'left'
+          }
+        },
+        richText: {
+          label: 'Rich Text',
+          description: 'Formatted content block',
+          defaults: {
+            content: 'Tell your brand story.\n\nUse this area for key messaging.'
+          }
+        },
+        imageText: {
+          label: 'Image + Text',
+          description: 'Split section with image and copy',
+          defaults: {
+            imageUrl: 'https://images.unsplash.com/photo-1556745757-8d76bdb6984b?auto=format&fit=crop&w=1200&q=80',
+            heading: 'Designed for customization',
+            body: 'Edit this section to match your theme and messaging.',
+            imageSide: 'left'
+          }
+        },
+        buttonRow: {
+          label: 'Button Row',
+          description: 'Multiple call-to-actions',
+          defaults: {
+            buttons: [
+              { label: 'Shop all', href: '#' },
+              { label: 'Learn more', href: '#' }
+            ]
+          }
+        }
+      };
+
+      /** @type {{ slug: string, sections: Array<{id: string, type: keyof typeof SECTION_DEFS, hidden?: boolean, settings: Record<string, unknown>}> }} */
+      let layout = {
+        slug: 'home',
+        sections: [
+          createSection('hero'),
+          createSection('richText')
+        ]
+      };
+
+      let selectedId = layout.sections[0]?.id ?? null;
+      let dragSourceId = null;
+
+      const slugInput = document.getElementById('slugInput');
+      const sectionListEl = document.getElementById('sectionList');
+      const previewAreaEl = document.getElementById('previewArea');
+      const previewMetaEl = document.getElementById('previewMeta');
+      const settingsPanelEl = document.getElementById('settingsPanel');
+      const modalBackdropEl = document.getElementById('addModalBackdrop');
+      const sectionTypeGridEl = document.getElementById('sectionTypeGrid');
+
+      document.getElementById('addSectionBtn').addEventListener('click', () => openAddSectionModal());
+      document.getElementById('closeModalBtn').addEventListener('click', () => closeAddSectionModal());
+      document.getElementById('saveBtn').addEventListener('click', () => saveLayout());
+      document.getElementById('loadBtn').addEventListener('click', () => loadLayout());
+      document.getElementById('exportBtn').addEventListener('click', () => exportLayout());
+      document.getElementById('importInput').addEventListener('change', event => importLayout(event));
+
+      slugInput.addEventListener('input', () => {
+        layout.slug = slugInput.value.trim() || 'home';
+        renderAll();
+      });
+
+      modalBackdropEl.addEventListener('click', (event) => {
+        if (event.target === modalBackdropEl) {
+          closeAddSectionModal();
+        }
+      });
+
+      function createSection(type) {
+        return {
+          id: `${type}_${Math.random().toString(36).slice(2, 10)}`,
+          type,
+          hidden: false,
+          settings: structuredClone(SECTION_DEFS[type].defaults)
+        };
+      }
+
+      function getSelectedSection() {
+        return layout.sections.find(section => section.id === selectedId) || null;
+      }
+
+      function moveSection(sourceId, destinationId) {
+        if (sourceId === destinationId) return;
+        const fromIndex = layout.sections.findIndex(s => s.id === sourceId);
+        const toIndex = layout.sections.findIndex(s => s.id === destinationId);
+        if (fromIndex < 0 || toIndex < 0) return;
+        const [item] = layout.sections.splice(fromIndex, 1);
+        layout.sections.splice(toIndex, 0, item);
+      }
+
+      function duplicateSection(id) {
+        const index = layout.sections.findIndex(section => section.id === id);
+        if (index < 0) return;
+        const copy = structuredClone(layout.sections[index]);
+        copy.id = `${copy.type}_${Math.random().toString(36).slice(2, 10)}`;
+        layout.sections.splice(index + 1, 0, copy);
+        selectedId = copy.id;
+      }
+
+      function toggleHidden(id) {
+        const section = layout.sections.find(item => item.id === id);
+        if (!section) return;
+        section.hidden = !section.hidden;
+      }
+
+      function openAddSectionModal() {
+        sectionTypeGridEl.replaceChildren();
+        Object.entries(SECTION_DEFS).forEach(([type, def]) => {
+          const button = document.createElement('button');
+          button.className = 'section-type-btn';
+          button.innerHTML = `<strong>${def.label}</strong><small>${def.description}</small>`;
+          button.addEventListener('click', () => {
+            const newSection = createSection(type);
+            layout.sections.push(newSection);
+            selectedId = newSection.id;
+            closeAddSectionModal();
+            renderAll();
+          });
+          sectionTypeGridEl.appendChild(button);
+        });
+        modalBackdropEl.style.display = 'flex';
+      }
+
+      function closeAddSectionModal() {
+        modalBackdropEl.style.display = 'none';
+      }
+
+      function saveLayout() {
+        localStorage.setItem(storageKey(), JSON.stringify(layout, null, 2));
+      }
+
+      function loadLayout() {
+        const raw = localStorage.getItem(storageKey());
+        if (!raw) return;
+        try {
+          const parsed = JSON.parse(raw);
+          if (!isValidLayout(parsed)) return;
+          layout = parsed;
+          slugInput.value = layout.slug;
+          selectedId = layout.sections[0]?.id ?? null;
+          renderAll();
+        } catch (_error) {
+          // ignore malformed data
+        }
+      }
+
+      function exportLayout() {
+        const blob = new Blob([JSON.stringify(layout, null, 2)], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${layout.slug || 'layout'}.json`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }
+
+      function importLayout(event) {
+        const input = event.target;
+        const file = input.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const parsed = JSON.parse(String(reader.result || ''));
+            if (!isValidLayout(parsed)) return;
+            layout = parsed;
+            slugInput.value = layout.slug;
+            selectedId = layout.sections[0]?.id ?? null;
+            renderAll();
+          } catch (_error) {
+            // ignore invalid import
+          }
+        };
+        reader.readAsText(file);
+        input.value = '';
+      }
+
+      function isValidLayout(candidate) {
+        return Boolean(
+          candidate &&
+          typeof candidate.slug === 'string' &&
+          Array.isArray(candidate.sections) &&
+          candidate.sections.every(section => (
+            section &&
+            typeof section.id === 'string' &&
+            typeof section.type === 'string' &&
+            SECTION_DEFS[section.type] &&
+            typeof section.settings === 'object'
+          ))
+        );
+      }
+
+      function storageKey() {
+        return `layout:${layout.slug || 'home'}`;
+      }
+
+      function renderSectionsList() {
+        sectionListEl.replaceChildren();
+        if (layout.sections.length === 0) {
+          const placeholder = document.createElement('div');
+          placeholder.className = 'muted-note';
+          placeholder.textContent = 'No sections yet. Add one to begin.';
+          sectionListEl.appendChild(placeholder);
+          return;
+        }
+
+        layout.sections.forEach(section => {
+          const card = document.createElement('div');
+          card.className = `section-card ${selectedId === section.id ? 'selected' : ''}`;
+          card.draggable = true;
+          card.dataset.sectionId = section.id;
+
+          card.addEventListener('dragstart', () => {
+            dragSourceId = section.id;
+          });
+
+          card.addEventListener('dragover', event => {
+            event.preventDefault();
+            card.classList.add('drag-over');
+          });
+
+          card.addEventListener('dragleave', () => {
+            card.classList.remove('drag-over');
+          });
+
+          card.addEventListener('drop', event => {
+            event.preventDefault();
+            card.classList.remove('drag-over');
+            if (!dragSourceId) return;
+            moveSection(dragSourceId, section.id);
+            dragSourceId = null;
+            renderAll();
+          });
+
+          card.addEventListener('dragend', () => {
+            dragSourceId = null;
+            document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+          });
+
+          const dragHandle = document.createElement('div');
+          dragHandle.className = 'drag-handle';
+          dragHandle.textContent = '⋮⋮';
+
+          const main = document.createElement('div');
+          main.style.cursor = 'pointer';
+          main.innerHTML = `
+            <div class="section-label">${SECTION_DEFS[section.type].label}${section.hidden ? '<span class="hidden-badge">Hidden</span>' : ''}</div>
+            <div class="section-meta">${section.id}</div>
+          `;
+          main.addEventListener('click', () => {
+            selectedId = section.id;
+            renderAll();
+          });
+
+          const actions = document.createElement('div');
+          actions.className = 'section-actions';
+
+          const duplicateBtn = document.createElement('button');
+          duplicateBtn.className = 'icon-btn';
+          duplicateBtn.title = 'Duplicate section';
+          duplicateBtn.textContent = '⧉';
+          duplicateBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            duplicateSection(section.id);
+            renderAll();
+          });
+
+          const hideBtn = document.createElement('button');
+          hideBtn.className = `icon-btn ${section.hidden ? 'active' : ''}`;
+          hideBtn.title = section.hidden ? 'Show section' : 'Hide section';
+          hideBtn.textContent = section.hidden ? '👁️‍🗨️' : '👁️';
+          hideBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            toggleHidden(section.id);
+            renderAll();
+          });
+
+          actions.append(duplicateBtn, hideBtn);
+          card.append(dragHandle, main, actions);
+          sectionListEl.appendChild(card);
+        });
+      }
+
+      function renderPreview() {
+        previewMetaEl.textContent = `/${layout.slug} · ${layout.sections.length} section${layout.sections.length === 1 ? '' : 's'}`;
+        previewAreaEl.replaceChildren();
+
+        if (layout.sections.length === 0) {
+          const placeholder = document.createElement('div');
+          placeholder.className = 'preview-placeholder';
+          placeholder.textContent = 'Your page preview appears here. Add a section to start.';
+          previewAreaEl.appendChild(placeholder);
+          return;
+        }
+
+        layout.sections.forEach(section => {
+          const wrapper = document.createElement('div');
+          wrapper.className = `preview-section ${selectedId === section.id ? 'selected' : ''} ${section.hidden ? 'hidden' : ''}`;
+          wrapper.addEventListener('click', () => {
+            selectedId = section.id;
+            renderAll();
+          });
+
+          wrapper.appendChild(renderSectionContent(section));
+          previewAreaEl.appendChild(wrapper);
+        });
+      }
+
+      function renderSectionContent(section) {
+        const settings = section.settings;
+
+        if (section.type === 'hero') {
+          const hero = document.createElement('div');
+          hero.className = 'hero';
+          hero.style.backgroundImage = `url('${settings.imageUrl || ''}')`;
+          hero.style.setProperty('--hero-overlay', String(settings.overlay ?? 0.4));
+
+          const content = document.createElement('div');
+          content.className = `hero-content ${settings.align === 'center' ? 'center' : ''}`;
+          content.innerHTML = `
+            <h1>${escapeHtml(settings.headline || '')}</h1>
+            <p>${escapeHtml(settings.subhead || '')}</p>
+            <a href="${escapeAttribute(settings.ctaHref || '#')}">${escapeHtml(settings.ctaText || 'Learn more')}</a>
+          `;
+          hero.appendChild(content);
+          return hero;
+        }
+
+        if (section.type === 'richText') {
+          const el = document.createElement('div');
+          el.className = 'rich-text';
+          el.textContent = String(settings.content || '');
+          return el;
+        }
+
+        if (section.type === 'imageText') {
+          const shell = document.createElement('div');
+          shell.className = 'image-text';
+
+          const image = document.createElement('img');
+          image.src = String(settings.imageUrl || '');
+          image.alt = String(settings.heading || 'Image section');
+
+          const content = document.createElement('div');
+          content.className = 'image-text-content';
+          content.innerHTML = `
+            <h3 style="margin:0;font-size:28px;">${escapeHtml(settings.heading || '')}</h3>
+            <p style="margin:0;color:#374151;line-height:1.5;">${escapeHtml(settings.body || '')}</p>
+          `;
+
+          if (settings.imageSide === 'right') {
+            shell.append(content, image);
+          } else {
+            shell.append(image, content);
+          }
+
+          return shell;
+        }
+
+        if (section.type === 'buttonRow') {
+          const row = document.createElement('div');
+          row.className = 'button-row';
+          const buttons = Array.isArray(settings.buttons) ? settings.buttons : [];
+          buttons.forEach(button => {
+            const link = document.createElement('a');
+            link.href = String(button.href || '#');
+            link.textContent = String(button.label || 'Button');
+            row.appendChild(link);
+          });
+          return row;
+        }
+
+        const fallback = document.createElement('div');
+        fallback.className = 'rich-text';
+        fallback.textContent = 'Unsupported section type.';
+        return fallback;
+      }
+
+      function renderSettingsPanel() {
+        settingsPanelEl.replaceChildren();
+        const selected = getSelectedSection();
+
+        if (!selected) {
+          settingsPanelEl.textContent = 'Select a section to edit settings.';
+          settingsPanelEl.className = 'muted-note';
+          return;
+        }
+
+        settingsPanelEl.className = '';
+
+        const title = document.createElement('h3');
+        title.style.marginTop = '0';
+        title.style.fontSize = '15px';
+        title.textContent = `${SECTION_DEFS[selected.type].label} settings`;
+        settingsPanelEl.appendChild(title);
+
+        const fields = createFieldsForSection(selected);
+        fields.forEach(field => settingsPanelEl.appendChild(field));
+      }
+
+      function createField(labelText, inputEl) {
+        const field = document.createElement('div');
+        field.className = 'field';
+        const label = document.createElement('label');
+        label.textContent = labelText;
+        field.append(label, inputEl);
+        return field;
+      }
+
+      function createTextInput(value, onInput, type = 'text') {
+        const input = document.createElement('input');
+        input.type = type;
+        input.value = String(value ?? '');
+        input.addEventListener('input', event => {
+          onInput(event.target.value);
+          renderPreview();
+          renderSectionsList();
+        });
+        return input;
+      }
+
+      function createTextArea(value, onInput) {
+        const textarea = document.createElement('textarea');
+        textarea.value = String(value ?? '');
+        textarea.addEventListener('input', event => {
+          onInput(event.target.value);
+          renderPreview();
+        });
+        return textarea;
+      }
+
+      function createSelect(options, currentValue, onInput) {
+        const select = document.createElement('select');
+        options.forEach(({ value, label }) => {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = label;
+          option.selected = value === currentValue;
+          select.appendChild(option);
+        });
+        select.addEventListener('change', event => {
+          onInput(event.target.value);
+          renderPreview();
+        });
+        return select;
+      }
+
+      function createFieldsForSection(section) {
+        const fields = [];
+        const s = section.settings;
+
+        if (section.type === 'hero') {
+          fields.push(createField('Headline', createTextInput(s.headline, value => s.headline = value)));
+          fields.push(createField('Subhead', createTextArea(s.subhead, value => s.subhead = value)));
+          fields.push(createField('CTA text', createTextInput(s.ctaText, value => s.ctaText = value)));
+          fields.push(createField('CTA href', createTextInput(s.ctaHref, value => s.ctaHref = value, 'url')));
+          fields.push(createField('Image URL', createTextInput(s.imageUrl, value => s.imageUrl = value, 'url')));
+
+          const overlay = document.createElement('input');
+          overlay.type = 'number';
+          overlay.min = '0';
+          overlay.max = '1';
+          overlay.step = '0.05';
+          overlay.value = String(s.overlay ?? 0.4);
+          overlay.addEventListener('input', event => {
+            const parsed = Number(event.target.value);
+            s.overlay = Number.isFinite(parsed) ? Math.max(0, Math.min(1, parsed)) : 0.4;
+            renderPreview();
+          });
+          fields.push(createField('Overlay (0-1)', overlay));
+
+          fields.push(createField('Align', createSelect([
+            { value: 'left', label: 'Left' },
+            { value: 'center', label: 'Center' }
+          ], s.align || 'left', value => s.align = value)));
+        }
+
+        if (section.type === 'richText') {
+          fields.push(createField('Content', createTextArea(s.content, value => s.content = value)));
+        }
+
+        if (section.type === 'imageText') {
+          fields.push(createField('Image URL', createTextInput(s.imageUrl, value => s.imageUrl = value, 'url')));
+          fields.push(createField('Heading', createTextInput(s.heading, value => s.heading = value)));
+          fields.push(createField('Body', createTextArea(s.body, value => s.body = value)));
+          fields.push(createField('Image side', createSelect([
+            { value: 'left', label: 'Left' },
+            { value: 'right', label: 'Right' }
+          ], s.imageSide || 'left', value => s.imageSide = value)));
+        }
+
+        if (section.type === 'buttonRow') {
+          const list = document.createElement('div');
+          list.className = 'button-list';
+
+          const buttons = Array.isArray(s.buttons) ? s.buttons : [];
+          buttons.forEach((button, index) => {
+            const item = document.createElement('div');
+            item.className = 'button-item';
+
+            const labelInput = createTextInput(button.label, value => {
+              button.label = value;
+            });
+
+            const hrefInput = createTextInput(button.href, value => {
+              button.href = value;
+            }, 'url');
+
+            const remove = document.createElement('button');
+            remove.className = 'button';
+            remove.style.marginTop = '8px';
+            remove.textContent = 'Remove';
+            remove.addEventListener('click', () => {
+              buttons.splice(index, 1);
+              renderAll();
+            });
+
+            item.append(
+              createField('Label', labelInput),
+              createField('Href', hrefInput),
+              remove
+            );
+            list.appendChild(item);
+          });
+
+          const add = document.createElement('button');
+          add.className = 'button';
+          add.textContent = '+ Add button';
+          add.addEventListener('click', () => {
+            buttons.push({ label: 'New button', href: '#' });
+            renderAll();
+          });
+
+          fields.push(list, add);
+        }
+
+        return fields;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function escapeAttribute(value) {
+        return escapeHtml(value).replaceAll('`', '&#96;');
+      }
+
+      function renderAll() {
+        renderSectionsList();
+        renderPreview();
+        renderSettingsPanel();
+      }
+
+      renderAll();
+    })();
+  </script>
+</body>
+</html>
