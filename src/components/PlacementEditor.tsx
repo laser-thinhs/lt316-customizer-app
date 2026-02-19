@@ -246,14 +246,28 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     });
   }, [doc.objects]);
 
-  const previewAssetUrl = useMemo(() => {
-    if (isImageObject(selected)) {
-      return `/api/assets/${selected.assetId}`;
+  const previewDesignParams = useMemo(() => {
+    const previewImage = isImageObject(selected)
+      ? selected
+      : doc.objects.find((entry): entry is ImagePlacementObject => entry.kind === "image");
+
+    if (!previewImage) {
+      return null;
     }
 
-    const firstImage = doc.objects.find((entry) => entry.kind === "image");
-    return firstImage ? `/api/assets/${firstImage.assetId}` : "";
+    return {
+      assetUrl: `/api/assets/${previewImage.assetId}`,
+      xMm: previewImage.xMm,
+      yMm: previewImage.yMm,
+      widthMm: previewImage.widthMm,
+      heightMm: previewImage.heightMm,
+      rotationDeg: previewImage.rotationDeg,
+      opacity: previewImage.opacity,
+      mmScale: 3
+    };
   }, [doc.objects, selected]);
+
+  const previewAssetUrl = previewDesignParams?.assetUrl ?? "";
 
   const commitDoc = (next: PlacementDocument) => {
     setUndoStack((prev) => [...prev.slice(-29), doc]);
@@ -882,6 +896,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
             <TumblerPreview3D
               diameterMm={doc.canvas.widthMm / Math.PI}
               heightMm={doc.canvas.heightMm}
+              designParams={previewDesignParams}
               designSvgUrl={previewAssetUrl}
               rotationDeg={selected?.rotationDeg ?? 0}
               offsetYMm={isImageObject(selected) ? selected.yMm : isTextObject(selected) ? selected.offsetYMm : 0}
