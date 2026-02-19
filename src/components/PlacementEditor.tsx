@@ -791,13 +791,6 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
 
           {selectedWarnings.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-xs text-amber-700">{selectedWarnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : null}
 
-          <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold">Export Pack</h3><span className={`rounded-full px-2 py-0.5 text-xs ${preflight?.status === "pass" ? "bg-emerald-100 text-emerald-700" : preflight?.status === "warn" ? "bg-amber-100 text-amber-700" : preflight?.status === "fail" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>{preflight?.status ?? "not-run"}</span></div>
-            <div className="flex flex-wrap gap-2"><button className="rounded border px-2 py-1 text-xs" onClick={() => void runPreflight()} disabled={isRunningPreflight}>{isRunningPreflight ? "Running..." : "Run Preflight"}</button><button className="rounded bg-slate-900 px-2 py-1 text-xs text-white" onClick={() => void exportJob()} disabled={isExporting}>{isExporting ? "Exporting..." : "Export Job"}</button></div>
-            <label className="block text-xs">Batch Job IDs (comma separated)<input value={batchIds} onChange={(event) => setBatchIds(event.target.value)} placeholder="job_a,job_b" className="mt-1 w-full rounded border px-2 py-1" /></label>
-            <button className="rounded border px-2 py-1 text-xs" onClick={() => void exportBatch()} disabled={isExporting}>Export Selected Jobs</button>
-            {(groupedIssues.error.length + groupedIssues.warning.length + groupedIssues.info.length) > 0 ? <div className="space-y-2 text-xs">{["error", "warning", "info"].map((severity) => <div key={severity}><p className="font-medium uppercase">{severity}</p><ul className="list-disc pl-4">{groupedIssues[severity as keyof typeof groupedIssues].map((issue) => <li key={`${issue.code}-${issue.objectId ?? issue.message}`}>{issue.message}{issue.objectId ? ` (${issue.objectId})` : ""}</li>)}</ul></div>)}</div> : null}
-          </section>
           <pre className="max-h-72 overflow-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(doc ?? createDefaultPlacementDocument(), null, 2)}</pre>
       <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
         <h3 className="text-sm font-semibold">Layers</h3>
@@ -910,7 +903,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
           <button onClick={onConvertToOutline} className="rounded bg-slate-900 px-3 py-2 text-sm text-white">Convert to Outline</button>
         </div> : null}
       {selectedWarnings.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-xs text-amber-700">{selectedWarnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : null}
-      <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
+      <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3 text-black">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-semibold">Export Pack</h3>
           <span className={`rounded-full px-2 py-0.5 text-xs ${preflight?.status === "pass" ? "bg-emerald-100 text-emerald-700" : preflight?.status === "warn" ? "bg-amber-100 text-amber-700" : preflight?.status === "fail" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
