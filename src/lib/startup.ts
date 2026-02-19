@@ -3,6 +3,7 @@ import { AppError } from "@/lib/errors";
 import { validateAuthConfig } from "@/lib/api-auth";
 
 let startupChecksRan = false;
+let startupSkipLogged = false;
 
 export function assertDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -44,7 +45,11 @@ export async function runStartupChecks() {
     const isNonProduction = process.env.NODE_ENV !== "production";
 
     if (isBuildPhase || skipCheck || isNonProduction) {
-      console.warn("Startup database check skipped during build/override:", error);
+      if (!startupSkipLogged) {
+        const reason = error instanceof Error ? error.message : "unknown error";
+        console.warn(`Startup checks skipped in non-production: ${reason}`);
+        startupSkipLogged = true;
+      }
       startupChecksRan = true;
       return;
     }
