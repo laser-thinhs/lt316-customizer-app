@@ -36,6 +36,11 @@ export default function HomePageClient() {
       : products[0].id;
   }, [products, selectedProductId]);
 
+  const isDbFallbackMode = useMemo(
+    () => resolvedSelectedProductId.startsWith("dev-"),
+    [resolvedSelectedProductId]
+  );
+
   useEffect(() => {
     (async () => {
       setLoadingProducts(true);
@@ -73,6 +78,11 @@ export default function HomePageClient() {
 
     if (!productProfileId || !machine?.id) {
       setError("No valid product profile selected.");
+      return;
+    }
+
+    if (isDbFallbackMode) {
+      setError("Database is offline. Start PostgreSQL (docker compose up -d db) to create jobs.");
       return;
     }
 
@@ -138,7 +148,8 @@ export default function HomePageClient() {
                 isCreatingJob ||
                 !resolvedSelectedProductId ||
                 isLoadingProducts ||
-                Boolean(productsError)
+                Boolean(productsError) ||
+                isDbFallbackMode
               }
               className="
                 w-full rounded-md border border-fuchsia-300/45 bg-fuchsia-600/70 px-4 py-2
@@ -146,10 +157,17 @@ export default function HomePageClient() {
                 disabled:cursor-not-allowed disabled:opacity-60
               "
             >
-              {isCreatingJob ? "Creating Job..." : "New Job"}
+              {isDbFallbackMode
+                ? "Database Offline - Start DB"
+                : isCreatingJob
+                  ? "Creating Job..."
+                  : "New Job"}
             </button>
 
             {error && <p className="text-sm text-rose-300">{error}</p>}
+            {isDbFallbackMode && !error ? (
+              <p className="text-sm text-amber-300">Start PostgreSQL to enable job creation.</p>
+            ) : null}
           </div>
 
           <aside className="space-y-3 rounded-xl border border-fuchsia-400/30 bg-fuchsia-950/25 p-4 text-sm text-fuchsia-100">
