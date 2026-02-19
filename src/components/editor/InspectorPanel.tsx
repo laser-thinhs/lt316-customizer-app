@@ -78,10 +78,10 @@ export default function InspectorPanel({
   const blendMode = selected ? (blendModeByObjectId[selected.id] ?? "normal") : "normal";
 
   return (
-    <aside className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <aside className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-black">
       <div>
-        <h3 className="text-base font-semibold text-slate-900">Inspector</h3>
-        <p className="text-xs text-slate-600">Object controls · units stay in mm and deg.</p>
+        <h3 className="text-base font-semibold text-black">Inspector</h3>
+        <p className="text-xs text-black">Object controls · units stay in mm and deg.</p>
       </div>
 
       <label className="block text-sm">
@@ -107,7 +107,7 @@ export default function InspectorPanel({
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold">Transform</h4>
               {isImageObject(selected) ? (
-                <button type="button" className="text-xs text-slate-700 underline" onClick={onToggleAspectRatio}>
+                <button type="button" className="text-xs text-black underline" onClick={onToggleAspectRatio}>
                   {selected.lockAspectRatio ? "Unlink aspect ratio" : "Link aspect ratio"}
                 </button>
               ) : null}
@@ -123,8 +123,8 @@ export default function InspectorPanel({
                 const hasError = errorByField.has(field);
                 return (
                   <label key={field} className="text-sm">
-                    <span className="mb-1 block font-medium text-slate-700">
-                      {label} <span className="text-xs text-slate-500">({unit})</span>
+                    <span className="mb-1 block font-medium text-black">
+                      {label} <span className="text-xs text-black">({unit})</span>
                     </span>
                     <input
                       name={`transform-${field}`}
@@ -135,7 +135,7 @@ export default function InspectorPanel({
                       onBlur={() => onBlurTransformField(field as keyof TransformValues)}
                       className={`w-full rounded border px-2 py-1 ${hasError ? "border-red-500" : "border-slate-300"}`}
                     />
-                    {hasError ? <span className="text-xs text-red-600">{errorByField.get(field)}</span> : null}
+                    {hasError ? <span className="text-xs text-black">{errorByField.get(field)}</span> : null}
                   </label>
                 );
               })}
@@ -199,7 +199,7 @@ export default function InspectorPanel({
           </section>
         </>
       ) : (
-        <p className="rounded border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-600">
+        <p className="rounded border border-dashed border-slate-300 bg-white p-3 text-xs text-black">
           Select an object to edit transform, appearance, and actions.
         </p>
       )}
