@@ -65,7 +65,7 @@ function isImageObject(object: PlacementObject | null): object is ImagePlacement
 function createTextObject(kind: TextObject["kind"]): TextObject {
   const base = {
     id: `text-${randomId()}`,
-    content: "Sample text",
+    content: "Edit text here...",
     fontFamily: curatedFonts[0],
     fontWeight: 400,
     fontStyle: "normal" as const,
@@ -155,6 +155,8 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const [selectedArtworkFile, setSelectedArtworkFile] = useState<{ name: string; size: number } | null>(null);
   const [artworkUploadError, setArtworkUploadError] = useState<string | null>(null);
   const artworkInputRef = useRef<HTMLInputElement>(null);
+  const textContentInputRef = useRef<HTMLTextAreaElement>(null);
+  const shouldFocusTextInputRef = useRef(false);
   const canRender3DPreview = process.env.NODE_ENV !== "test";
 
   const formatBytes = (bytes: number) => {
@@ -292,8 +294,18 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
       zIndex: doc.objects.length
     }, doc.canvas);
     commitDoc({ ...doc, objects: [...doc.objects, clamped] });
+    shouldFocusTextInputRef.current = true;
     setSelectedObjectId(clamped.id);
   };
+
+  useEffect(() => {
+    if (!shouldFocusTextInputRef.current) return;
+    if (!isTextObject(selected)) return;
+    if (!textContentInputRef.current) return;
+    textContentInputRef.current.focus();
+    textContentInputRef.current.select();
+    shouldFocusTextInputRef.current = false;
+  }, [selected]);
 
   const updateSelectedText = (updater: (object: TextObject) => TextObject) => {
     if (!isTextObject(selected) || selected.locked) return;
@@ -524,8 +536,8 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const renderArtworkAssetsSection = () => (
     <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="space-y-1">
-        <h3 className="text-sm font-semibold text-slate-900">Artwork Assets</h3>
-        <p className="text-xs text-slate-600">Upload your artwork for this job. Supported: SVG, PNG, JPG.</p>
+        <h3 className="text-sm font-semibold text-black">Artwork Assets</h3>
+        <p className="text-xs text-black">Upload your artwork for this job. Supported: SVG, PNG, JPG.</p>
       </div>
       <div
         role="button"
@@ -543,9 +555,9 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
       >
         <div className="flex items-start gap-3">
           <span aria-hidden className="mt-0.5 text-base">⇪</span>
-          <div className="space-y-1 text-xs text-slate-700">
-            <p className="font-medium text-slate-900">{selectedArtworkFile ? selectedArtworkFile.name : "No artwork uploaded yet."}</p>
-            <p className="text-slate-600">{selectedArtworkFile ? `${formatBytes(selectedArtworkFile.size)} selected` : "Drag & drop a file here, or choose a file."}</p>
+          <div className="space-y-1 text-xs text-black">
+            <p className="font-medium text-black">{selectedArtworkFile ? selectedArtworkFile.name : "No artwork uploaded yet."}</p>
+            <p className="text-black">{selectedArtworkFile ? `${formatBytes(selectedArtworkFile.size)} selected` : "Drag & drop a file here, or choose a file."}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -561,7 +573,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
           </button>
           <button
             type="button"
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-black transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!selectedArtworkFile || isUploadingArtwork}
             onClick={(event) => {
               event.stopPropagation();
@@ -570,7 +582,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
           >
             Clear
           </button>
-          <p className="text-xs text-slate-500">Size limits apply.</p>
+          <p className="text-xs text-black">Size limits apply.</p>
         </div>
         <input
           ref={artworkInputRef}
@@ -580,7 +592,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
           onChange={onUploadArtwork}
         />
       </div>
-      {isUploadingArtwork ? <p className="text-xs text-slate-600">Uploading…</p> : null}
+      {isUploadingArtwork ? <p className="text-xs text-black">Uploading…</p> : null}
       {artworkUploadError ? <p className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">{artworkUploadError}</p> : null}
       <div className="max-h-52 space-y-2 overflow-auto pr-1">
         {assets.map((asset) => {
@@ -588,17 +600,17 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
           return (
             <div key={asset.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-sm">
               <div>
-                <p className="font-medium text-slate-900">{asset.originalName ?? asset.id}</p>
-                <p className="text-slate-600">{asset.widthPx ?? "?"}×{asset.heightPx ?? "?"} px</p>
-                {uploadedLabel ? <p className="text-slate-500">Uploaded {uploadedLabel}</p> : null}
+                <p className="font-medium text-black">{asset.originalName ?? asset.id}</p>
+                <p className="text-black">{asset.widthPx ?? "?"}×{asset.heightPx ?? "?"} px</p>
+                {uploadedLabel ? <p className="text-black">Uploaded {uploadedLabel}</p> : null}
               </div>
-              <button className="rounded-md border border-slate-300 px-2 py-1 font-medium text-slate-700 transition hover:bg-slate-50" onClick={() => onAddAssetToCanvas(asset)}>Add to Canvas</button>
+              <button className="rounded-md border border-slate-300 px-2 py-1 font-medium text-black transition hover:bg-slate-50" onClick={() => onAddAssetToCanvas(asset)}>Add to Canvas</button>
             </div>
           );
         })}
         {assets.length === 0 ? (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-            <p className="font-medium text-slate-800">No artwork uploaded yet.</p>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-black">
+            <p className="font-medium text-black">No artwork uploaded yet.</p>
             <p className="mt-1">Drag & drop a file here, or choose a file.</p>
           </div>
         ) : null}
@@ -693,12 +705,12 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const exportBatch = async () => { setExporting(true); try { const jobIds = batchIds.split(",").map((e) => e.trim()).filter(Boolean); const res = await fetch("/api/design-jobs/export-batch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ designJobIds: jobIds }) }); const json = await res.json(); if (!res.ok) throw new Error(json?.error?.message || "Batch export failed"); setStatusMessage(`Batch exported ${json.data.count} jobs.`); } catch (error) { setStatusMessage(error instanceof Error ? error.message : "Unknown batch export error"); } finally { setExporting(false); } };
 
   return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm text-black">
       <h2 className="text-base font-semibold">Placement & Text Tools (mm)</h2>
-      <p className="min-h-5 text-xs text-slate-600" aria-live="polite">{autosave.statusMessage}</p>
-      <p className="text-xs text-slate-600">Source of truth is the unwrapped 2D document.</p>
+      <p className="min-h-5 text-xs text-black" aria-live="polite">{autosave.statusMessage}</p>
+      <p className="text-xs text-black">Source of truth is the unwrapped 2D document.</p>
       {autosave.hasRecoveredDraft ? (
-        <div className="flex flex-wrap items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <div className="flex flex-wrap items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-black">
           <span>Recovered unsaved local edits.</span>
           <button
             className="rounded border border-amber-400 px-2 py-1 hover:bg-amber-100"
@@ -778,7 +790,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
 
           {isTextObject(selected) ? (
             <section className="grid grid-cols-1 gap-2 rounded border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
-              <label className="text-sm sm:col-span-2">Content<textarea value={selected.content} onChange={(e) => updateSelectedText((obj) => ({ ...obj, content: e.target.value }))} className="w-full rounded border px-2 py-1" rows={3} /></label>
+              <label className="text-sm sm:col-span-2">Content<textarea ref={textContentInputRef} value={selected.content} onChange={(e) => updateSelectedText((obj) => ({ ...obj, content: e.target.value }))} className="w-full rounded border px-2 py-1" rows={3} /></label>
               <label className="text-sm">Font<select value={selected.fontFamily} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontFamily: e.target.value }))} className="w-full rounded border px-2 py-1">{curatedFonts.map((font) => <option key={font}>{font}</option>)}</select></label>
               <label className="text-sm">Font Size (mm)<input type="number" step="0.1" value={selected.fontSizeMm} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontSizeMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
               <label className="text-sm">Letter Spacing (mm)<input type="number" step="0.1" value={selected.letterSpacingMm} onChange={(e) => updateSelectedText((obj) => ({ ...obj, letterSpacingMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
@@ -789,7 +801,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
             </section>
           ) : null}
 
-          {selectedWarnings.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-xs text-amber-700">{selectedWarnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : null}
+          {selectedWarnings.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-xs text-black">{selectedWarnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : null}
 
           <pre className="max-h-72 overflow-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(doc ?? createDefaultPlacementDocument(), null, 2)}</pre>
       <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
@@ -825,8 +837,8 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
 
       <label className="block text-sm"><span>Selected Object</span><select value={selectedObjectId ?? ""} onChange={(event) => setSelectedObjectId(event.target.value || null)} className="w-full rounded border px-2 py-1"><option value="">None</option>{doc.objects.map((entry, index) => (<option key={entry.id} value={entry.id}>{defaultLayerName(entry, index)}</option>))}</select></label>
 
-      {isImageObject(selected) && selected.locked ? <p className="text-xs text-amber-700">Selected layer is locked.</p> : null}
-      {isTextObject(selected) && selected.locked ? <p className="text-xs text-amber-700">Selected layer is locked.</p> : null}
+      {isImageObject(selected) && selected.locked ? <p className="text-xs text-black">Selected layer is locked.</p> : null}
+      {isTextObject(selected) && selected.locked ? <p className="text-xs text-black">Selected layer is locked.</p> : null}
 
       <section className="space-y-3 rounded border border-slate-200 bg-slate-50 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -902,7 +914,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
           {selected.kind === "text_arc" && <><label className="text-sm">Arc Radius (mm)<input type="number" step="0.1" value={selected.arc.radiusMm} onChange={(e) => updateSelectedText((obj) => obj.kind === "text_arc" ? { ...obj, arc: { ...obj.arc, radiusMm: Number(e.target.value) } } : obj)} className="w-full rounded border px-2 py-1" /></label><label className="text-sm">Arc Start Angle<input type="number" step="0.1" value={selected.arc.startAngleDeg} onChange={(e) => updateSelectedText((obj) => obj.kind === "text_arc" ? { ...obj, arc: { ...obj.arc, startAngleDeg: Number(e.target.value) } } : obj)} className="w-full rounded border px-2 py-1" /></label></>}
           <button onClick={onConvertToOutline} className="rounded bg-slate-900 px-3 py-2 text-sm text-white">Convert to Outline</button>
         </div> : null}
-      {selectedWarnings.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-xs text-amber-700">{selectedWarnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : null}
+      {selectedWarnings.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-xs text-black">{selectedWarnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : null}
       <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3 text-black">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-semibold">Export Pack</h3>
@@ -950,8 +962,8 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
           <div className="space-y-2 rounded border bg-white p-2 text-xs">
             <p><strong>Last export:</strong> {new Date(exportResult.exportedAt).toLocaleString()}</p>
             <p><strong>SVG size:</strong> {(exportResult.svgByteSize / 1024).toFixed(2)} KB ┬╖ <strong>Manifest size:</strong> {(exportResult.manifestByteSize / 1024).toFixed(2)} KB</p>
-            {exportResult.warnings.length > 0 ? <ul className="list-disc pl-4 text-amber-700">{exportResult.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
-            {exportResult.errors.length > 0 ? <ul className="list-disc pl-4 text-red-700">{exportResult.errors.map((error) => <li key={error}>{error}</li>)}</ul> : null}
+            {exportResult.warnings.length > 0 ? <ul className="list-disc pl-4 text-black">{exportResult.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+            {exportResult.errors.length > 0 ? <ul className="list-disc pl-4 text-black">{exportResult.errors.map((error) => <li key={error}>{error}</li>)}</ul> : null}
             <details>
               <summary className="cursor-pointer font-medium">Advanced</summary>
               <div className="mt-2 space-y-2">
@@ -1016,7 +1028,7 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
           blendModeByObjectId={blendModeByObjectId}
         />
       </div>
-      <p className="min-h-5 text-xs text-slate-700">{statusMessage}</p>
+      <p className="min-h-5 text-xs text-black">{statusMessage}</p>
     </section>
   );
 }
