@@ -297,18 +297,16 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
           <div>
             <div className="mb-2 flex items-center gap-2">
               <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search filename"
+                id="search-assets" name="search-assets" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search filename"
                 className="w-full rounded border px-2 py-1 text-xs"
               />
-              <select className="rounded border px-2 py-1 text-xs" value={sortBy} onChange={(e) => setSortBy(e.target.value as "recent" | "oldest" | "name")}>
+              <select id="sort-by" name="sort-by" className="rounded border px-2 py-1 text-xs" value={sortBy} onChange={(e) => setSortBy(e.target.value as "recent" | "oldest" | "name")}>
                 <option value="recent">Recent uploads</option>
                 <option value="oldest">Oldest</option>
                 <option value="name">Name</option>
               </select>
             </div>
-            <label className="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={imagesOnly} onChange={() => setImagesOnly((v) => !v)} /> Images only</label>
+            <label className="mb-2 flex items-center gap-2 text-xs"><input id="images-only" name="images-only" type="checkbox" checked={imagesOnly} onChange={() => setImagesOnly((v) => !v)} /> Images only</label>
             <div className="grid max-h-72 grid-cols-2 gap-2 overflow-auto pr-1">
               {filteredAssets.map((asset) => (
                 <article key={asset.id} className="rounded border p-2 text-xs">
@@ -367,11 +365,11 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
 
         <h2 className="font-semibold">Controls</h2>
         <div className="grid grid-cols-2 gap-2">
-          <NumberField label="Width (mm)" value={store.placement.widthMm} onChange={(value) => store.patchPlacement({ widthMm: value })} />
-          <NumberField label="Height (mm)" value={store.placement.heightMm} onChange={(value) => store.patchPlacement({ heightMm: value })} />
-          <NumberField label="Offset X (mm)" value={store.placement.offsetXMm} onChange={(value) => store.patchPlacement({ offsetXMm: value })} />
-          <NumberField label="Offset Y (mm)" value={store.placement.offsetYMm} onChange={(value) => store.patchPlacement({ offsetYMm: value })} />
-          <NumberField label="Rotation (deg)" value={store.placement.rotationDeg} onChange={(value) => store.patchPlacement({ rotationDeg: value })} />
+          <NumberField fieldId="width-mm" label="Width (mm)" value={store.placement.widthMm} onChange={(value) => store.patchPlacement({ widthMm: value })} />
+          <NumberField fieldId="height-mm" label="Height (mm)" value={store.placement.heightMm} onChange={(value) => store.patchPlacement({ heightMm: value })} />
+          <NumberField fieldId="offset-x-mm" label="Offset X (mm)" value={store.placement.offsetXMm} onChange={(value) => store.patchPlacement({ offsetXMm: value })} />
+          <NumberField fieldId="offset-y-mm" label="Offset Y (mm)" value={store.placement.offsetYMm} onChange={(value) => store.patchPlacement({ offsetYMm: value })} />
+          <NumberField fieldId="rotation-deg" label="Rotation (deg)" value={store.placement.rotationDeg} onChange={(value) => store.patchPlacement({ rotationDeg: value })} />
         </div>
         <select
           value={store.placement.anchor}
@@ -386,9 +384,9 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
             <option key={anchor} value={anchor}>{anchor}</option>
           ))}
         </select>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={store.lockAspectRatio} onChange={store.toggleAspectLock} /> Lock aspect</label>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={store.snapToGrid} onChange={store.toggleSnapToGrid} /> Snap 1mm</label>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={clampEnabled} onChange={() => setClampEnabled((v) => !v)} /> Hard clamp preview</label>
+        <label className="flex items-center gap-2 text-sm"><input id="lock-aspect" name="lock-aspect" type="checkbox" checked={store.lockAspectRatio} onChange={store.toggleAspectLock} /> Lock aspect</label>
+        <label className="flex items-center gap-2 text-sm"><input id="snap-grid" name="snap-grid" type="checkbox" checked={store.snapToGrid} onChange={store.toggleSnapToGrid} /> Snap 1mm</label>
+        <label className="flex items-center gap-2 text-sm"><input id="clamp-enabled" name="clamp-enabled" type="checkbox" checked={clampEnabled} onChange={() => setClampEnabled((v) => !v)} /> Hard clamp preview</label>
         <div className="rounded bg-amber-50 p-2 text-xs text-amber-800">{warnings.length ? warnings.join(" ") : "No warnings."}</div>
         <div className="flex gap-2">
           <button onClick={() => store.undo()} className="rounded border px-2 py-1 text-xs">Undo</button>

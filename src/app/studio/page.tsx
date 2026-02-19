@@ -163,7 +163,7 @@ export default function StudioPage() {
       <main className="mx-auto max-w-md p-6">
         <h1 className="text-2xl font-semibold">Studio (Dev)</h1>
         <p className="mt-2 text-sm text-slate-600">Enter Studio password.</p>
-        <input type="password" className="mt-4 w-full rounded border p-2" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <input name="studioPassword" type="password" className="mt-4 w-full rounded border p-2" value={password} onChange={(e) => setPassword(e.target.value)} />
         <button type="button" className="mt-3 rounded bg-slate-900 px-4 py-2 text-white" onClick={login}>
           Unlock Studio
         </button>
@@ -184,7 +184,7 @@ export default function StudioPage() {
           ))}
         </div>
         <hr className="my-3" />
-        <input className="w-full rounded border p-2 text-sm" value={layoutId} onChange={(e) => setLayoutId(e.target.value)} />
+        <input name="layoutId" className="w-full rounded border p-2 text-sm" value={layoutId} onChange={(e) => setLayoutId(e.target.value)} />
         <button type="button" className="mt-2 w-full rounded bg-slate-200 p-2 text-sm" onClick={() => loadLayout(layoutId)}>
           Load Layout
         </button>
@@ -221,7 +221,7 @@ export default function StudioPage() {
               {inspectorEntries.map(([key, value]) => (
                 <label key={key} className="block text-xs">
                   <span className="mb-1 block text-slate-500">{key}</span>
-                  <input value={value} onChange={(e) => updateSelectedProp(key, e.target.value)} className="w-full rounded border p-2 text-sm" />
+                  <input name={`prop-${key}`} value={value} onChange={(e) => updateSelectedProp(key, e.target.value)} className="w-full rounded border p-2 text-sm" />
                 </label>
               ))}
               {inspectorError ? <p className="text-xs text-red-600">{inspectorError}</p> : null}
@@ -233,7 +233,7 @@ export default function StudioPage() {
 
         <div className="rounded bg-white p-3 shadow-sm">
           <h2 className="text-sm font-semibold">AI Proposal</h2>
-          <textarea value={aiInstruction} onChange={(e) => setAiInstruction(e.target.value)} className="mt-2 h-24 w-full rounded border p-2 text-sm" placeholder="e.g. add 3d model and change text" />
+          <textarea name="aiInstruction" value={aiInstruction} onChange={(e) => setAiInstruction(e.target.value)} className="mt-2 h-24 w-full rounded border p-2 text-sm" placeholder="e.g. add 3d model and change text" />
           <button type="button" className="mt-2 w-full rounded bg-slate-900 p-2 text-sm text-white" onClick={proposeChanges}>
             Propose changes
           </button>

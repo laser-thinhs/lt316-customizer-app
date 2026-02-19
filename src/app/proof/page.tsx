@@ -274,6 +274,7 @@ function ProofPageClient() {
         <section className="space-y-3 rounded border p-4">
           <div className="text-sm text-slate-600">Template preset</div>
           <select
+            name="templateId"
             className="w-full rounded border p-2"
             value={templateId}
             onChange={(e) => {
@@ -288,33 +289,33 @@ function ProofPageClient() {
           </select>
 
           <label className="block text-sm">DPI
-            <input className="mt-1 w-full rounded border p-2" type="number" value={dpi} onChange={(e) => setDpi(Number(e.target.value))} />
+            <input name="dpi" className="mt-1 w-full rounded border p-2" type="number" value={dpi} onChange={(e) => setDpi(Number(e.target.value))} />
           </label>
-          <label className="text-sm"><input type="checkbox" checked={lockDpi} onChange={(e) => setLockDpi(e.target.checked)} /> Lock to template default</label>
+          <label className="text-sm"><input name="lockDpi" type="checkbox" checked={lockDpi} onChange={(e) => setLockDpi(e.target.checked)} /> Lock to template default</label>
 
-          <label className="block text-sm">SVG Asset ID<input className="mt-1 w-full rounded border p-2" value={svgAssetId} onChange={(e) => setSvgAssetId(e.target.value)} /></label>
-          <label className="block text-sm">Scale %<input className="mt-1 w-full rounded border p-2" type="number" value={placementMm.scalePercent} onChange={(e) => setPlacementMm((prev) => ({ ...prev, scalePercent: Number(e.target.value) }))} /></label>
-          <label className="block text-sm">Rotate °<input className="mt-1 w-full rounded border p-2" type="number" value={placementMm.rotateDeg} onChange={(e) => setPlacementMm((prev) => ({ ...prev, rotateDeg: Number(e.target.value) }))} /></label>
-          <label className="block text-sm">X (mm)<input className="mt-1 w-full rounded border p-2" type="number" value={placementMm.xMm} onChange={(e) => setSnappedPlacement({ ...placementMm, xMm: Number(e.target.value) })} /></label>
+          <label className="block text-sm">SVG Asset ID<input name="svgAssetId" className="mt-1 w-full rounded border p-2" value={svgAssetId} onChange={(e) => setSvgAssetId(e.target.value)} /></label>
+          <label className="block text-sm">Scale %<input name="scalePercent" className="mt-1 w-full rounded border p-2" type="number" value={placementMm.scalePercent} onChange={(e) => setPlacementMm((prev) => ({ ...prev, scalePercent: Number(e.target.value) }))} /></label>
+          <label className="block text-sm">Rotate °<input name="rotateDeg" className="mt-1 w-full rounded border p-2" type="number" value={placementMm.rotateDeg} onChange={(e) => setPlacementMm((prev) => ({ ...prev, rotateDeg: Number(e.target.value) }))} /></label>
+          <label className="block text-sm">X (mm)<input name="xMm" className="mt-1 w-full rounded border p-2" type="number" value={placementMm.xMm} onChange={(e) => setSnappedPlacement({ ...placementMm, xMm: Number(e.target.value) })} /></label>
           <div className="text-xs text-slate-500">X (px @dpi): {bounding.xPx}</div>
-          <label className="block text-sm">Y (mm)<input className="mt-1 w-full rounded border p-2" type="number" value={placementMm.yMm} onChange={(e) => setSnappedPlacement({ ...placementMm, yMm: Number(e.target.value) })} /></label>
+          <label className="block text-sm">Y (mm)<input name="yMm" className="mt-1 w-full rounded border p-2" type="number" value={placementMm.yMm} onChange={(e) => setSnappedPlacement({ ...placementMm, yMm: Number(e.target.value) })} /></label>
           <div className="text-xs text-slate-500">Y (px @dpi): {bounding.yPx}</div>
           <div className="text-xs text-slate-500">Round-trip mm check: {bounding.xMmFromPx}</div>
 
           <div className="flex gap-2 text-sm">
-            <label><input type="checkbox" checked={placementMm.mirrorH} onChange={(e) => setPlacementMm((prev) => ({ ...prev, mirrorH: e.target.checked }))} /> Mirror H</label>
-            <label><input type="checkbox" checked={placementMm.mirrorV} onChange={(e) => setPlacementMm((prev) => ({ ...prev, mirrorV: e.target.checked }))} /> Mirror V</label>
+            <label><input name="mirrorH" type="checkbox" checked={placementMm.mirrorH} onChange={(e) => setPlacementMm((prev) => ({ ...prev, mirrorH: e.target.checked }))} /> Mirror H</label>
+            <label><input name="mirrorV" type="checkbox" checked={placementMm.mirrorV} onChange={(e) => setPlacementMm((prev) => ({ ...prev, mirrorV: e.target.checked }))} /> Mirror V</label>
           </div>
 
           <div className="rounded border p-2 text-sm">
             <div className="font-medium">Guides + snapping</div>
-            <label className="block"><input type="checkbox" checked={gridEnabled} onChange={(e) => setGridEnabled(e.target.checked)} /> Grid overlay</label>
+            <label className="block"><input name="gridEnabled" type="checkbox" checked={gridEnabled} onChange={(e) => setGridEnabled(e.target.checked)} /> Grid overlay</label>
             <label className="block">Grid spacing (mm)
-              <input className="mt-1 w-full rounded border p-1" type="number" value={gridSpacingMm} onChange={(e) => setGridSpacingMm(Number(e.target.value))} />
+              <input name="gridSpacingMm" className="mt-1 w-full rounded border p-1" type="number" value={gridSpacingMm} onChange={(e) => setGridSpacingMm(Number(e.target.value))} />
             </label>
-            <label className="block"><input type="checkbox" checked={snapToGrid} onChange={(e) => setSnapToGrid(e.target.checked)} /> Snap to grid</label>
-            <label className="block"><input type="checkbox" checked={snapToCenterlines} onChange={(e) => setSnapToCenterlines(e.target.checked)} /> Snap to centerlines</label>
-            <label className="block"><input type="checkbox" checked={snapToSafeBounds} onChange={(e) => setSnapToSafeBounds(e.target.checked)} /> Snap to safe bounds</label>
+            <label className="block"><input name="snapToGrid" type="checkbox" checked={snapToGrid} onChange={(e) => setSnapToGrid(e.target.checked)} /> Snap to grid</label>
+            <label className="block"><input name="snapToCenterlines" type="checkbox" checked={snapToCenterlines} onChange={(e) => setSnapToCenterlines(e.target.checked)} /> Snap to centerlines</label>
+            <label className="block"><input name="snapToSafeBounds" type="checkbox" checked={snapToSafeBounds} onChange={(e) => setSnapToSafeBounds(e.target.checked)} /> Snap to safe bounds</label>
           </div>
 
           <div className="flex flex-wrap gap-2">
