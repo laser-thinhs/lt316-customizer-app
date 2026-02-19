@@ -6,8 +6,10 @@ import Image from "next/image";
 import { usePlacementStore, selectPlacementDerived } from "@/store/placementStore";
 import type { PlacementInput } from "@/schemas/placement";
 import { circumferenceMm } from "@/lib/geometry/cylinder";
+import CanvasRenderer from "./CanvasRenderer";
 
 const TumblerPreview3D = dynamic(() => import("./TumblerPreview3D"), { ssr: false });
+const AssetGallery = dynamic(() => import("./AssetGallery"), { ssr: false });
 
 type AssetRef = {
   id: string;
@@ -395,34 +397,29 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
         </div>
       </section>
 
-      <section className="rounded border bg-white p-3">
+            <section className="rounded border bg-white p-3">
         <h2 className="mb-2 font-semibold">2D Unwrapped Canvas</h2>
-        <div className="relative overflow-auto rounded border bg-slate-50" style={{ width: "100%", minHeight: 420 }}>
-          <div
-            className="relative border border-slate-300"
-            style={{ width: derived.zone.widthMm * mmScale, height: derived.zone.heightMm * mmScale, backgroundSize: `${mmScale * 10}px ${mmScale * 10}px`, backgroundImage: "linear-gradient(to right,#e2e8f0 1px,transparent 1px),linear-gradient(to bottom,#e2e8f0 1px,transparent 1px)" }}
-            onPointerMove={(e) => {
-              if ((e.buttons & 1) === 0) return;
-              const target = e.currentTarget.getBoundingClientRect();
-              const x = (e.clientX - target.left) / mmScale;
-              const y = (e.clientY - target.top) / mmScale;
-              store.patchPlacement({ offsetXMm: x, offsetYMm: y });
-            }}
-          >
-            <div className="absolute left-0 top-0 h-full w-0.5 bg-red-500" />
-            <div
-              className="absolute border-2 border-blue-600/80 bg-blue-300/20"
-              style={{
-                left: rect.xMm * mmScale,
-                top: rect.yMm * mmScale,
-                width: rect.widthMm * mmScale,
-                height: rect.heightMm * mmScale,
-                transform: `rotate(${store.placement.rotationDeg}deg)`,
-                transformOrigin: "center"
-              }}
-            />
-          </div>
-        </div>
+        <CanvasRenderer
+          canvasSize={{ widthMm: derived.zone.widthMm, heightMm: derived.zone.heightMm }}
+          assets={activeAsset ? [{
+            id: activeAsset.id,
+            type: activeAsset.mime?.includes('svg') ? 'svg' : 'image',
+            url: activeAsset.url,
+            xMm: store.placement.offsetXMm,
+            yMm: store.placement.offsetYMm,
+            widthMm: store.placement.widthMm,
+            heightMm: store.placement.heightMm,
+            rotationDeg: store.placement.rotationDeg,
+            opacity: 1
+          }] : []}
+          selectedAssetId={activeAsset?.id}
+          mmScale={3}
+          gridEnabled={true}
+          gridSpacingMm={5}
+          showCenterlines={true}
+          onAssetMove={(id, x, y) => store.patchPlacement({ offsetXMm: x, offsetYMm: y })}
+          onAssetResize={(id, w, h) => store.patchPlacement({ widthMm: w, heightMm: h })}
+        />
       </section>
 
       <section className="rounded border bg-white p-3">
