@@ -8,32 +8,34 @@ type Job = {
 
 export default function JobSummaryCard({ job }: { job: Job }) {
   return (
-    <div className="rounded-xl border border-sky-400/25 bg-slate-950/50 p-4 shadow-[0_0_0_1px_rgba(56,189,248,0.16)]">
-      <h2 className="text-base font-semibold text-slate-100">Job Created</h2>
-      <dl className="mt-3 space-y-1 text-sm text-slate-100/85">
-        <div className="flex justify-between gap-4">
-          <dt className="font-medium">Job ID</dt>
-          <dd className="truncate">{job.id}</dd>
+    <div className="rounded-lg border border-sky-300/35 bg-slate-900/55 p-3">
+      <h2 className="text-sm font-semibold text-slate-100">Job Created</h2>
+      <dl className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-100/90">
+        <div className="rounded border border-sky-900/60 bg-slate-950/50 px-2 py-1.5">
+          <dt className="text-[10px] uppercase tracking-wide text-sky-200/70">Job ID</dt>
+          <dd className="mt-1 break-all font-medium text-slate-100">{job.id}</dd>
         </div>
-        <div className="flex justify-between gap-4">
-          <dt className="font-medium">Status</dt>
-          <dd>{job.status}</dd>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded border border-sky-900/60 bg-slate-950/50 px-2 py-1.5">
+            <dt className="text-[10px] uppercase tracking-wide text-sky-200/70">Status</dt>
+            <dd className="mt-1 font-medium text-slate-100">{job.status}</dd>
+          </div>
+          <div className="rounded border border-sky-900/60 bg-slate-950/50 px-2 py-1.5">
+            <dt className="text-[10px] uppercase tracking-wide text-sky-200/70">Created</dt>
+            <dd className="mt-1 font-medium text-slate-100">{new Date(job.createdAt).toLocaleString()}</dd>
+          </div>
         </div>
-        <div className="flex justify-between gap-4">
-          <dt className="font-medium">Product</dt>
-          <dd>
+        <div className="rounded border border-sky-900/60 bg-slate-950/50 px-2 py-1.5">
+          <dt className="text-[10px] uppercase tracking-wide text-sky-200/70">Product</dt>
+          <dd className="mt-1 font-medium text-slate-100">
             {job.productProfile.name} ({job.productProfile.sku})
           </dd>
         </div>
-        <div className="flex justify-between gap-4">
-          <dt className="font-medium">Machine</dt>
-          <dd>
+        <div className="rounded border border-sky-900/60 bg-slate-950/50 px-2 py-1.5">
+          <dt className="text-[10px] uppercase tracking-wide text-sky-200/70">Machine</dt>
+          <dd className="mt-1 font-medium text-slate-100">
             {job.machineProfile.name} / {job.machineProfile.lens}
           </dd>
-        </div>
-        <div className="flex justify-between gap-4">
-          <dt className="font-medium">Created</dt>
-          <dd>{new Date(job.createdAt).toLocaleString()}</dd>
         </div>
       </dl>
     </div>
