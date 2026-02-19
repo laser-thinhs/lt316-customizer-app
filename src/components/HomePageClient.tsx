@@ -26,6 +26,7 @@ export default function HomePageClient() {
   const [isLoadingProducts, setLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isDbUnavailable, setDbUnavailable] = useState(false);
 
   const { isCreatingJob, setCreatingJob } = useUIStore();
 
@@ -35,6 +36,12 @@ export default function HomePageClient() {
       ? selectedProductId
       : products[0].id;
   }, [products, selectedProductId]);
+
+  const isDbFallbackMode = useMemo(
+    () => resolvedSelectedProductId.startsWith("dev-"),
+    [resolvedSelectedProductId]
+  );
+  const isDbOfflineMode = isDbFallbackMode || isDbUnavailable;
 
   useEffect(() => {
     (async () => {
@@ -76,6 +83,11 @@ export default function HomePageClient() {
       return;
     }
 
+    if (isDbOfflineMode) {
+      setError("Database is offline. Start PostgreSQL (docker compose up -d db) to create jobs.");
+      return;
+    }
+
     setError(null);
     setCreatingJob(true);
 
@@ -92,8 +104,13 @@ export default function HomePageClient() {
 
       const json: unknown = await res.json();
       if (!res.ok) {
+        const apiError = (json as { error?: { message?: string; code?: string } })?.error;
+        if (res.status === 503 || apiError?.code === "DATABASE_UNAVAILABLE") {
+          setDbUnavailable(true);
+          throw new Error("Database is offline. Start PostgreSQL (docker compose up -d db) to create jobs.");
+        }
         throw new Error(
-          (json as { error?: { message?: string } })?.error?.message || "Failed to create job"
+          apiError?.message || "Failed to create job"
         );
       }
 
@@ -138,7 +155,8 @@ export default function HomePageClient() {
                 isCreatingJob ||
                 !resolvedSelectedProductId ||
                 isLoadingProducts ||
-                Boolean(productsError)
+                Boolean(productsError) ||
+                isDbOfflineMode
               }
               className="
                 w-full rounded-md border border-fuchsia-300/45 bg-fuchsia-600/70 px-4 py-2
@@ -146,10 +164,17 @@ export default function HomePageClient() {
                 disabled:cursor-not-allowed disabled:opacity-60
               "
             >
-              {isCreatingJob ? "Creating Job..." : "New Job"}
+              {isDbOfflineMode
+                ? "Database Offline - Start DB"
+                : isCreatingJob
+                  ? "Creating Job..."
+                  : "New Job"}
             </button>
 
             {error && <p className="text-sm text-rose-300">{error}</p>}
+            {isDbOfflineMode && !error ? (
+              <p className="text-sm text-amber-300">Start PostgreSQL to enable job creation.</p>
+            ) : null}
           </div>
 
           <aside className="space-y-3 rounded-xl border border-fuchsia-400/30 bg-fuchsia-950/25 p-4 text-sm text-fuchsia-100">
