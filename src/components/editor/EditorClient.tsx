@@ -7,6 +7,7 @@ import { usePlacementStore, selectPlacementDerived } from "@/store/placementStor
 import type { PlacementInput } from "@/schemas/placement";
 import { circumferenceMm } from "@/lib/geometry/cylinder";
 import CanvasRenderer from "./CanvasRenderer";
+import { sanitizePlacement, type ArtworkPlacement } from "./artworkTexture";
 
 import TumblerPreview3D from "./TumblerPreview3D";
 
@@ -61,11 +62,11 @@ function toLegacyPlacement(input: PlacementInput): {
   };
 }
 
-function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+function NumberField({ fieldId, label, value, onChange }: { fieldId: string; label: string; value: number; onChange: (value: number) => void }) {
   return (
     <label className="space-y-1 text-sm">
       <span>{label}</span>
-      <input type="number" step="0.1" className="w-full rounded border px-2 py-1" value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <input id={fieldId} name={fieldId} type="number" step="0.1" className="w-full rounded border px-2 py-1" value={value} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   );
 }
