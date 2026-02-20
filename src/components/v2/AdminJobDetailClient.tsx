@@ -192,6 +192,22 @@ export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
         </div>
         <div><span className="text-slate-500">Updated</span><p className="font-medium">{new Date(job.updatedAt).toLocaleString()}</p></div>
       </div>
+      {(job.productTemplateId || job.templateGblPath || job.templatePreviewSvgPath) ? (
+        <div className="mt-3 grid gap-2 border-t pt-3 text-sm md:grid-cols-2">
+          <div className="space-y-1">
+            <div>Template: {job.productTemplateId ?? "(legacy / none)"}</div>
+            <div>Color: {job.colorId ?? "(none)"}</div>
+            <div>Design: {job.templateDesignId ?? "default"}</div>
+            <div className="break-all">Production GBL: {job.templateGblPath ?? "(not set)"}</div>
+            {job.templateMeshPath ? <div className="break-all">Mesh: {job.templateMeshPath}</div> : null}
+          </div>
+          {job.templatePreviewSvgPath ? (
+            <div className="flex items-center justify-start md:justify-end">
+              <img src={job.templatePreviewSvgPath} alt="Template preview" className="h-24 rounded border bg-white p-1" />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </section>
 
     {error ? <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}

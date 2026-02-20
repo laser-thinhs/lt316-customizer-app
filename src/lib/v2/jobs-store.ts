@@ -47,6 +47,12 @@ export async function createV2Job(input: {
   objectDefinitionId?: string;
   customerName?: string;
   customerEmail?: string;
+  productTemplateId?: string;
+  colorId?: string;
+  templateDesignId?: string;
+  templateGblPath?: string;
+  templatePreviewSvgPath?: string;
+  templateMeshPath?: string;
 }) {
   const objectId = input.objectDefinitionId ?? objectPresets[0].id;
   const stamp = nowIso();
@@ -58,6 +64,12 @@ export async function createV2Job(input: {
     objectDefinitionId: objectId,
     placement: defaultPlacement(objectId),
     bedLayout: defaultBedLayout(),
+    productTemplateId: input.productTemplateId,
+    colorId: input.colorId,
+    templateDesignId: input.templateDesignId,
+    templateGblPath: input.templateGblPath,
+    templatePreviewSvgPath: input.templatePreviewSvgPath,
+    templateMeshPath: input.templateMeshPath,
     createdAt: stamp,
     updatedAt: stamp
   };
@@ -158,7 +170,8 @@ export async function generateV2Artifacts(jobId: string) {
     job,
     generatedAt: nowIso(),
     destination,
-    productionConfig: job.productionConfig as ProductionConfig | undefined
+    productionConfig: job.productionConfig as ProductionConfig | undefined,
+    templateGblPath: job.templateGblPath
   };
   await atomicWriteJson(path.join(destination, "job.json"), packet);
 
