@@ -26,6 +26,10 @@ export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
     setJob(payload.data);
   }
 
+  function setLocalBedLayout(nextBedLayout: NonNullable<DesignJob["bedLayout"]>) {
+    setJob((prev) => (prev ? { ...prev, bedLayout: nextBedLayout } : prev));
+  }
+
   async function generate() {
     const res = await fetch(`/api/admin/design-jobs/${jobId}/generate`, { method: "POST" });
     const payload = await res.json();
@@ -63,7 +67,7 @@ export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
         <h2 className="mb-2 font-medium">Bed Mock Editor</h2>
         {bed ? <>
           <div className="mb-2 grid grid-cols-2 gap-2">
-            <label>Grid spacing <input className="w-full border" type="number" value={bed.grid.spacing} onChange={(e) => save({ bedLayout: { ...bed, grid: { ...bed.grid, spacing: Number(e.target.value) } } })} /></label>
+            <label>Grid spacing <input className="w-full border" type="number" value={bed.grid.spacing} onChange={(e) => setLocalBedLayout({ ...bed, grid: { ...bed.grid, spacing: Number(e.target.value) } })} onBlur={(e) => save({ bedLayout: { ...bed, grid: { ...bed.grid, spacing: Number(e.target.value) } } })} /></label>
             <label>Grid enabled <input type="checkbox" checked={bed.grid.enabled} onChange={(e) => save({ bedLayout: { ...bed, grid: { ...bed.grid, enabled: e.target.checked } } })} /></label>
           </div>
           <svg viewBox={`0 0 ${bed.bedW_mm} ${bed.bedH_mm}`} className="h-[280px] w-full rounded bg-slate-950">
@@ -75,10 +79,16 @@ export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
               const startX = e.clientX;
               const startY = e.clientY;
               const base = { ...bed.placedItem };
+              let latest = base;
               const onMove = (ev: PointerEvent) => {
-                save({ bedLayout: { ...bed, placedItem: { ...base, x: base.x + (ev.clientX - startX) * 0.6, y: base.y + (ev.clientY - startY) * 0.6 } } });
+                latest = { ...base, x: base.x + (ev.clientX - startX) * 0.6, y: base.y + (ev.clientY - startY) * 0.6 };
+                setLocalBedLayout({ ...bed, placedItem: latest });
               };
-              const onUp = () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+              const onUp = () => {
+                window.removeEventListener("pointermove", onMove);
+                window.removeEventListener("pointerup", onUp);
+                save({ bedLayout: { ...bed, placedItem: latest } });
+              };
               window.addEventListener("pointermove", onMove);
               window.addEventListener("pointerup", onUp);
             }} />

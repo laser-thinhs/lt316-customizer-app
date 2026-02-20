@@ -11,6 +11,8 @@ const saveDebounceMs = 350;
 export default function CustomerEditorClient({ initialJobId }: Props) {
   const [job, setJob] = useState<DesignJob | null>(null);
   const [asset, setAsset] = useState<DesignAsset | null>(null);
+  const [submitState, setSubmitState] = useState<"idle" | "submitting" | "submitted" | "error">("idle");
+  const [submitMessage, setSubmitMessage] = useState<string>("");
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -48,6 +50,10 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
     }, saveDebounceMs);
   }
 
+  function setLocalPlacement(nextPlacement: Placement) {
+    setJob((prev) => (prev ? { ...prev, placement: nextPlacement } : prev));
+  }
+
   async function upload(file: File) {
     if (!job) return;
     const form = new FormData();
@@ -59,9 +65,20 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
 
   async function submit() {
     if (!job) return;
-    await fetch(`/api/design-jobs/${job.id}/submit`, { method: "POST" });
+    setSubmitState("submitting");
+    setSubmitMessage("");
+    const response = await fetch(`/api/design-jobs/${job.id}/submit`, { method: "POST" });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = payload?.error?.message ?? "Submit failed. Please try again.";
+      setSubmitState("error");
+      setSubmitMessage(message);
+      return;
+    }
     const refreshed = await fetch(`/api/design-jobs/${job.id}`).then((res) => res.json());
     setJob(refreshed.data);
+    setSubmitState("submitted");
+    setSubmitMessage("Job submitted successfully.");
   }
 
   const placement = job?.placement;
@@ -82,8 +99,18 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
               </select>
             </label>
             <input type="file" accept=".svg,image/svg+xml" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
-            <button className="rounded bg-emerald-600 px-3 py-2 text-white" onClick={submit}>Submit Job</button>
+            <button
+              className="rounded bg-emerald-600 px-3 py-2 text-white disabled:opacity-50"
+              onClick={submit}
+              disabled={submitState === "submitting" || !job.id.startsWith("v2_")}
+            >
+              {submitState === "submitting" ? "Submitting..." : "Submit Job"}
+            </button>
+            <div className="text-sm text-slate-600">Status: {job.status}</div>
           </div>
+          {submitMessage ? (
+            <div className={submitState === "error" ? "text-sm text-red-600" : "text-sm text-emerald-700"}>{submitMessage}</div>
+          ) : null}
           {placement ? (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="rounded border p-3">
@@ -107,14 +134,15 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
                         const startX = e.clientX;
                         const startY = e.clientY;
                         const base = { ...placement };
+                        let latest = base;
                         const onMove = (ev: PointerEvent) => {
-                          const next = { ...base, x_mm: base.x_mm + (ev.clientX - startX) * 0.5, y_mm: base.y_mm + (ev.clientY - startY) * 0.5 };
-                          setJob((prev) => prev ? { ...prev, placement: next } : prev);
-                          scheduleSave(next);
+                          latest = { ...base, x_mm: base.x_mm + (ev.clientX - startX) * 0.5, y_mm: base.y_mm + (ev.clientY - startY) * 0.5 };
+                          setLocalPlacement(latest);
                         };
                         const onUp = () => {
                           window.removeEventListener("pointermove", onMove);
                           window.removeEventListener("pointerup", onUp);
+                          scheduleSave(latest);
                         };
                         window.addEventListener("pointermove", onMove);
                         window.addEventListener("pointerup", onUp);
@@ -125,22 +153,28 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
                 <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                   <label>Scale <input type="range" min={0.1} max={3} step={0.05} value={placement.scale} onChange={(e) => {
                     const next = { ...placement, scale: Number(e.target.value) };
-                    setJob({ ...job, placement: next });
+                    setLocalPlacement(next);
+                  }} onPointerUp={(e) => {
+                    const next = { ...placement, scale: Number((e.target as HTMLInputElement).value) };
                     scheduleSave(next);
                   }} /></label>
                   <label>Rotate° <input type="range" min={-180} max={180} step={1} value={placement.rotation_deg} onChange={(e) => {
                     const next = { ...placement, rotation_deg: Number(e.target.value) };
-                    setJob({ ...job, placement: next });
+                    setLocalPlacement(next);
+                  }} onPointerUp={(e) => {
+                    const next = { ...placement, rotation_deg: Number((e.target as HTMLInputElement).value) };
                     scheduleSave(next);
                   }} /></label>
                   <label>Wrap <input type="checkbox" checked={placement.wrapEnabled} onChange={(e) => {
                     const next = { ...placement, wrapEnabled: e.target.checked };
-                    setJob({ ...job, placement: next });
+                    setLocalPlacement(next);
                     scheduleSave(next);
                   }} /></label>
                   <label>Seam X <input type="range" min={0} max={width} step={1} value={placement.seamX_mm} onChange={(e) => {
                     const next = { ...placement, seamX_mm: Number(e.target.value) };
-                    setJob({ ...job, placement: next });
+                    setLocalPlacement(next);
+                  }} onPointerUp={(e) => {
+                    const next = { ...placement, seamX_mm: Number((e.target as HTMLInputElement).value) };
                     scheduleSave(next);
                   }} /></label>
                 </div>
