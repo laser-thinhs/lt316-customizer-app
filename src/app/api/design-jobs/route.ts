@@ -15,7 +15,17 @@ export async function POST(request: Request) {
     const body = await request.json();
 
     if (body?.v2 === true || body?.objectDefinitionId) {
-      const data = await createV2Job(body);
+      const data = await createV2Job({
+        objectDefinitionId: body.objectDefinitionId,
+        customerName: body.customerName,
+        customerEmail: body.customerEmail,
+        productTemplateId: body.productTemplateId,
+        colorId: body.colorId,
+        templateDesignId: body.templateDesignId,
+        templateGblPath: body.templateGblPath,
+        templatePreviewSvgPath: body.templatePreviewSvgPath,
+        templateMeshPath: body.templateMeshPath
+      });
       return ok(data, 201);
     }
 

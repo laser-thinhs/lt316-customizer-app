@@ -49,6 +49,19 @@ export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
 
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <section className="rounded border p-3 text-sm">
+        <h2 className="mb-2 font-medium">Template Selection</h2>
+        <div className="space-y-1">
+          <div>Template: {job.productTemplateId ?? "(legacy / none)"}</div>
+          <div>Color: {job.colorId ?? "(none)"}</div>
+          <div>Design: {job.templateDesignId ?? "default"}</div>
+          <div className="break-all">Production GBL: {job.templateGblPath ?? "(not set)"}</div>
+        </div>
+        {job.templatePreviewSvgPath ? (
+          <img src={job.templatePreviewSvgPath} alt="Template preview" className="mt-3 h-24 rounded border bg-white p-1" />
+        ) : null}
+      </section>
+
+      <section className="rounded border p-3 text-sm">
         <h2 className="mb-2 font-medium">Production Config</h2>
         <div className="space-y-2">
           <select className="w-full border" value={job.productionConfig?.machineId ?? ""} onChange={(e) => save({ productionConfig: { ...job.productionConfig, machineId: e.target.value, lensId: job.productionConfig?.lensId ?? lensPresets[0].id, presetId: job.productionConfig?.presetId ?? settingsPresets[0].id, outputProfile: { format: "svg", namingTemplate: "{JOBID}-{TYPE}" }, destinationRule: "/storage/v2-runtime/jobs/{YYYY}/{MM}/{JOBID}/" } })}>
@@ -63,7 +76,7 @@ export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
         </div>
       </section>
 
-      <section className="rounded border p-3 text-sm">
+      <section className="rounded border p-3 text-sm lg:col-span-2">
         <h2 className="mb-2 font-medium">Bed Mock Editor</h2>
         {bed ? <>
           <div className="mb-2 grid grid-cols-2 gap-2">

@@ -51,6 +51,12 @@ export type DesignJob = {
   updatedAt: string;
   productionConfig?: ProductionConfig;
   bedLayout?: BedLayout;
+  productTemplateId?: string;
+  colorId?: string;
+  templateDesignId?: string;
+  templateGblPath?: string;
+  templatePreviewSvgPath?: string;
+  templateMeshPath?: string;
 };
 
 export type ProductionConfig = {
