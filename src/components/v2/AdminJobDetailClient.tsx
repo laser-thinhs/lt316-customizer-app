@@ -51,13 +51,13 @@ export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
       <section className="rounded border p-3 text-sm">
         <h2 className="mb-2 font-medium">Production Config</h2>
         <div className="space-y-2">
-          <select className="w-full border" value={job.productionConfig?.machineId ?? ""} onChange={(e) => save({ productionConfig: { ...job.productionConfig, machineId: e.target.value, lensId: job.productionConfig?.lensId ?? lensPresets[0].id, presetId: job.productionConfig?.presetId ?? settingsPresets[0].id, outputProfile: { format: "svg", namingTemplate: "{JOBID}-{TYPE}" }, destinationRule: "/data/jobs/{YYYY}/{MM}/{JOBID}/" } })}>
+          <select className="w-full border" value={job.productionConfig?.machineId ?? ""} onChange={(e) => save({ productionConfig: { ...job.productionConfig, machineId: e.target.value, lensId: job.productionConfig?.lensId ?? lensPresets[0].id, presetId: job.productionConfig?.presetId ?? settingsPresets[0].id, outputProfile: { format: "svg", namingTemplate: "{JOBID}-{TYPE}" }, destinationRule: "/storage/v2-runtime/jobs/{YYYY}/{MM}/{JOBID}/" } })}>
             {machinePresets.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
-          <select className="w-full border" value={job.productionConfig?.lensId ?? ""} onChange={(e) => save({ productionConfig: { ...job.productionConfig, machineId: job.productionConfig?.machineId ?? machinePresets[0].id, lensId: e.target.value, presetId: job.productionConfig?.presetId ?? settingsPresets[0].id, outputProfile: { format: "svg", namingTemplate: "{JOBID}-{TYPE}" }, destinationRule: "/data/jobs/{YYYY}/{MM}/{JOBID}/" } })}>
+          <select className="w-full border" value={job.productionConfig?.lensId ?? ""} onChange={(e) => save({ productionConfig: { ...job.productionConfig, machineId: job.productionConfig?.machineId ?? machinePresets[0].id, lensId: e.target.value, presetId: job.productionConfig?.presetId ?? settingsPresets[0].id, outputProfile: { format: "svg", namingTemplate: "{JOBID}-{TYPE}" }, destinationRule: "/storage/v2-runtime/jobs/{YYYY}/{MM}/{JOBID}/" } })}>
             {lensPresets.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
-          <select className="w-full border" value={job.productionConfig?.presetId ?? ""} onChange={(e) => save({ productionConfig: { ...job.productionConfig, machineId: job.productionConfig?.machineId ?? machinePresets[0].id, lensId: job.productionConfig?.lensId ?? lensPresets[0].id, presetId: e.target.value, outputProfile: { format: "svg", namingTemplate: "{JOBID}-{TYPE}" }, destinationRule: "/data/jobs/{YYYY}/{MM}/{JOBID}/" } })}>
+          <select className="w-full border" value={job.productionConfig?.presetId ?? ""} onChange={(e) => save({ productionConfig: { ...job.productionConfig, machineId: job.productionConfig?.machineId ?? machinePresets[0].id, lensId: job.productionConfig?.lensId ?? lensPresets[0].id, presetId: e.target.value, outputProfile: { format: "svg", namingTemplate: "{JOBID}-{TYPE}" }, destinationRule: "/storage/v2-runtime/jobs/{YYYY}/{MM}/{JOBID}/" } })}>
             {settingsPresets.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>

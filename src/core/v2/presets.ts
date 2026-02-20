@@ -53,4 +53,4 @@ export const settingsPresets: SettingsPreset[] = [
   { id: "fast-pass", name: "Fast Pass" }
 ];
 
-export const defaultDestinationRule = "/data/jobs/{YYYY}/{MM}/{JOBID}/";
+export const defaultDestinationRule = "/storage/v2-runtime/jobs/{YYYY}/{MM}/{JOBID}/";
