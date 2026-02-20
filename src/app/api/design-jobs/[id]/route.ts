@@ -33,7 +33,13 @@ export async function PATCH(request: Request, { params }: Params) {
         objectDefinitionId: body.objectDefinitionId,
         placement: body.placement,
         customerName: body.customerName,
-        customerEmail: body.customerEmail
+        customerEmail: body.customerEmail,
+        productTemplateId: body.productTemplateId,
+        colorId: body.colorId,
+        templateDesignId: body.templateDesignId,
+        templateGblPath: body.templateGblPath,
+        templatePreviewSvgPath: body.templatePreviewSvgPath,
+        templateMeshPath: body.templateMeshPath
       });
       if (!updated) {
         return Response.json({ error: { code: "NOT_FOUND", message: "Design job not found" } }, { status: 404 });

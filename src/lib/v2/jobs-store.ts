@@ -47,6 +47,12 @@ export async function createV2Job(input: {
   objectDefinitionId?: string;
   customerName?: string;
   customerEmail?: string;
+  productTemplateId?: string;
+  colorId?: string;
+  templateDesignId?: string;
+  templateGblPath?: string;
+  templatePreviewSvgPath?: string;
+  templateMeshPath?: string;
 }) {
   const objectId = input.objectDefinitionId ?? objectPresets[0].id;
   const stamp = nowIso();
@@ -58,6 +64,12 @@ export async function createV2Job(input: {
     objectDefinitionId: objectId,
     placement: defaultPlacement(objectId),
     bedLayout: defaultBedLayout(),
+    productTemplateId: input.productTemplateId,
+    colorId: input.colorId,
+    templateDesignId: input.templateDesignId,
+    templateGblPath: input.templateGblPath,
+    templatePreviewSvgPath: input.templatePreviewSvgPath,
+    templateMeshPath: input.templateMeshPath,
     createdAt: stamp,
     updatedAt: stamp
   };
@@ -72,10 +84,17 @@ export async function getV2Job(jobId: string) {
 export async function listV2Jobs(status?: JobStatus) {
   await ensureDir(recordsRoot);
   const entries = await withFsRetries(() => fs.readdir(recordsRoot));
+  const recordFiles = entries.filter((item) => item.endsWith(".json") && !item.includes(".asset."));
   const jobs = await Promise.all(
-    entries.filter((item) => item.endsWith(".json")).map(async (item) => readJsonFile<DesignJob>(path.join(recordsRoot, item)))
+    recordFiles.map(async (item) => {
+      try {
+        return await readJsonFile<DesignJob>(path.join(recordsRoot, item));
+      } catch {
+        return null;
+      }
+    })
   );
-  return jobs.filter((j): j is DesignJob => j !== null && (!status || j.status === status));
+  return jobs.filter((j): j is DesignJob => j !== null && typeof j.status === "string" && (!status || j.status === status));
 }
 
 export async function updateV2Job(jobId: string, patch: Partial<DesignJob>) {
@@ -85,7 +104,7 @@ export async function updateV2Job(jobId: string, patch: Partial<DesignJob>) {
     ...existing,
     ...patch,
     placement: patch.placement ? { ...existing.placement, ...patch.placement } : existing.placement,
-    bedLayout: patch.bedLayout ? { ...existing.bedLayout, ...patch.bedLayout } as BedLayout : existing.bedLayout,
+    bedLayout: patch.bedLayout ? ({ ...existing.bedLayout, ...patch.bedLayout } as BedLayout) : existing.bedLayout,
     productionConfig: patch.productionConfig ?? existing.productionConfig,
     updatedAt: nowIso()
   };
@@ -151,7 +170,8 @@ export async function generateV2Artifacts(jobId: string) {
     job,
     generatedAt: nowIso(),
     destination,
-    productionConfig: job.productionConfig as ProductionConfig | undefined
+    productionConfig: job.productionConfig as ProductionConfig | undefined,
+    templateGblPath: job.templateGblPath
   };
   await atomicWriteJson(path.join(destination, "job.json"), packet);
 

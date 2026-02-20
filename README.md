@@ -319,6 +319,7 @@ npm run build               # Production build test
 
 ## Runtime storage policy
 
-- Generated uploads and job artifacts for the v2 customer/admin flow are written under `public/uploads/v2` and `data/jobs`.
+- Generated uploads and job artifacts for the v2 customer/admin flow are written under `public/uploads/v2` and `storage/v2-runtime/jobs` by default.
+- You can override the v2 runtime root with `V2_RUNTIME_ROOT` (absolute or relative path), e.g. `V2_RUNTIME_ROOT="D:/lt316-runtime"`.
 - Do **not** write runtime files into `.next` or depend on `.next/types` for application behavior.
-- The repository `.gitignore` excludes both `.next/` and `/data/` to reduce lock/contention issues on Windows (e.g., EBUSY).
+- The repository `.gitignore` excludes `.next/`, `/data/`, `/storage/`, and `/public/uploads/v2/` runtime outputs to reduce lock/contention issues on Windows (e.g., EBUSY) and avoid accidental commits.
