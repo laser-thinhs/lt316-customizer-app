@@ -3,7 +3,11 @@ import path from "node:path";
 
 const RETRYABLE = new Set(["EBUSY", "EPERM", "EMFILE", "ENFILE"]);
 
-export const dataRoot = path.join(process.cwd(), "data");
+const runtimeRoot = process.env.V2_RUNTIME_ROOT?.trim();
+
+export const dataRoot = runtimeRoot && runtimeRoot.length > 0
+  ? path.resolve(runtimeRoot)
+  : path.join(process.cwd(), "storage", "v2-runtime");
 export const jobsRoot = path.join(dataRoot, "jobs");
 export const recordsRoot = path.join(jobsRoot, "records");
 

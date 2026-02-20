@@ -42,3 +42,4 @@ storage/
 
 # Runtime generated artifacts
 /data/
+/public/uploads/v2/
