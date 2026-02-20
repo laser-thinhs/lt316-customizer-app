@@ -114,18 +114,37 @@ export default function TracerPage() {
     setStatus("done");
   }
 
+  function downloadSvg() {
+    const blob = new Blob([svg], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "trace.svg";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function copySvgToClipboard() {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(svg);
+    }
+  }
+
   async function sendToProof() {
     if (!outputSvgAssetId) return;
+
     const res = await fetch("/api/proof/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ svgAssetId: outputSvgAssetId })
     });
+
     const payload = await res.json();
     if (!res.ok) {
       setError(payload?.error?.message ?? "Could not create proof job");
       return;
     }
+
     router.push(`/proof?jobId=${payload.data.id}&svgAssetId=${outputSvgAssetId}`);
   }
 
@@ -135,12 +154,18 @@ export default function TracerPage() {
       {banner ? <div className="rounded border p-2">Status: {banner}</div> : null}
       {error ? <div className="rounded border border-red-500 p-2 text-red-600">{error}</div> : null}
 
-      <input type="file" accept="image/png,image/jpeg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+      <input
+        name="sourceImage"
+        type="file"
+        accept="image/png,image/jpeg"
+        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+      />
 
       <div className="grid grid-cols-2 gap-3">
         <label>
           Presets
           <select
+            name="tracePreset"
             className="ml-2 border"
             onChange={(e) => {
               const preset = PRESETS[e.target.value];
@@ -159,10 +184,17 @@ export default function TracerPage() {
         <label>
           Outline mode
           <input
+            name="outlineMode"
             className="ml-2"
             type="checkbox"
             checked={settings.outlineMode}
-            onChange={(e) => setSettings((prev) => ({ ...prev, outlineMode: e.target.checked, output: e.target.checked ? "stroke" : prev.output }))}
+            onChange={(e) =>
+              setSettings((prev) => ({
+                ...prev,
+                outlineMode: e.target.checked,
+                output: e.target.checked ? "stroke" : prev.output
+              }))
+            }
           />
         </label>
       </div>
@@ -175,35 +207,30 @@ export default function TracerPage() {
         <section className="space-y-2">
           <div className="flex gap-2">
             <button
-              className="rounded border px-3 py-1"
-              onClick={() => {
-                const blob = new Blob([svg], { type: "image/svg+xml" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = "trace.svg";
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
+              className="rounded border px-3 py-1 hover:bg-slate-50"
+              onClick={downloadSvg}
             >
               Download as .svg
             </button>
             <button
-              className="rounded border px-3 py-1"
-              onClick={async () => {
-                if (!navigator.clipboard) return;
-                await navigator.clipboard.writeText(svg);
-              }}
+              className="rounded border px-3 py-1 hover:bg-slate-50"
+              onClick={copySvgToClipboard}
             >
               Copy SVG
             </button>
             {outputSvgAssetId ? (
-              <button className="rounded border px-3 py-1" onClick={sendToProof}>
+              <button
+                className="rounded border px-3 py-1 hover:bg-slate-50"
+                onClick={sendToProof}
+              >
                 Send to Proof
               </button>
             ) : null}
           </div>
-          <div className="rounded border p-3" dangerouslySetInnerHTML={{ __html: svg }} />
+          <div
+            className="rounded border p-3"
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
         </section>
       ) : null}
     </main>

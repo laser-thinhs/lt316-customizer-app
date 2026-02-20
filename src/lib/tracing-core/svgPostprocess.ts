@@ -38,8 +38,8 @@ function parseSvgPaths(svg: string): Array<{ d: string; fill?: string; stroke?: 
   const paths = Array.from(doc.querySelectorAll("path"));
   return paths.map((p) => ({
     d: p.getAttribute("d") || "",
-    fill: p.getAttribute("fill"),
-    stroke: p.getAttribute("stroke")
+    fill: p.getAttribute("fill") ?? undefined,
+    stroke: p.getAttribute("stroke") ?? undefined
   }));
 }
 
@@ -53,7 +53,7 @@ function getPathBBox(pathD: string): { x: number; y: number; width: number; heig
     const doc = parser.parseFromString(svg, "image/svg+xml");
     const path = doc.querySelector("path");
     if (!path) return null;
-    const bbox = (path as any).getBBox?.();
+    const bbox = (path as unknown as SVGGraphicsElement).getBBox?.();
     return bbox ? { x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height } : null;
   } catch {
     return null;
@@ -80,7 +80,7 @@ function simplifyPath(pathD: string, tolerance: number): string {
 
   // Simple regex-based point extraction (M, L, C commands)
   const commands = pathD.match(/[a-zA-Z]|[-+]?(\d+\.?\d*|\.\d+)/g) || [];
-  let simplified: string[] = [];
+  const simplified: string[] = [];
   let i = 0;
 
   while (i < commands.length) {

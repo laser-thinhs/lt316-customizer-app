@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export async function logAudit(action: string, entityType: string, payload: {
@@ -11,7 +12,7 @@ export async function logAudit(action: string, entityType: string, payload: {
       entityType,
       entityId: payload.entityId,
       correlationId: payload.correlationId,
-      payloadJson: payload.payloadJson as any
+      payloadJson: payload.payloadJson === undefined ? undefined : (payload.payloadJson as Prisma.InputJsonValue)
     }
   });
 }

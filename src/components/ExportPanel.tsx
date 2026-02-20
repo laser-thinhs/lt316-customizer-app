@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { TRACING_PRESETS, PRESET_OPTIONS, type TracingPreset } from "@/lib/tracing-core/presets";
+import { TRACING_PRESETS, PRESET_OPTIONS } from "@/lib/tracing-core/presets";
 
 type ExportSettings = {
   threshold: number;
@@ -54,7 +54,7 @@ export default function ExportPanel({ svgContent, onExport }: Props) {
     });
   };
 
-  const handleSettingChange = (key: keyof ExportSettings, value: any) => {
+  const handleSettingChange = <K extends keyof ExportSettings>(key: K, value: ExportSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -67,6 +67,7 @@ export default function ExportPanel({ svgContent, onExport }: Props) {
     link.download = filename;
     link.click();
     URL.revokeObjectURL(url);
+    onExport?.(svgContent, svgContent, settings);
   };
 
   const countNodes = () => {
@@ -244,10 +245,22 @@ export default function ExportPanel({ svgContent, onExport }: Props) {
       )}
 
       <div className="flex gap-2">
-        <button onClick={() => downloadSvg(false)} className="flex-1 rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+        <button
+          onClick={() => downloadSvg(false)}
+          className="
+            flex-1 rounded bg-blue-600 px-3 py-2
+            text-sm font-medium text-white hover:bg-blue-700
+          "
+        >
           Download SVG
         </button>
-        <button onClick={() => downloadSvg(true)} className="flex-1 rounded bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700">
+        <button
+          onClick={() => downloadSvg(true)}
+          className="
+            flex-1 rounded bg-green-600 px-3 py-2
+            text-sm font-medium text-white hover:bg-green-700
+          "
+        >
           Download Optimized
         </button>
       </div>

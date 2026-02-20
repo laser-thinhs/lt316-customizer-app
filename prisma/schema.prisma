@@ -96,8 +96,10 @@ model DesignJob {
   proofPngAssetId  String?
   exportZipAssetId String?
   proofTemplateId  String?
+  proofDpi         Int?
   proofPlacementJson Json?
-  proofCompositionJson Json?
+  proofPlacementMmJson Json?
+  proofUiSettingsJson Json?
   proofStatus      String?         @default("draft")
   proofError       String?
   batchRunItemId   String?         @unique

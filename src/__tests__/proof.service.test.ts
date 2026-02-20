@@ -1,16 +1,11 @@
-import os from "node:os";
-import path from "node:path";
-import { promises as fs } from "node:fs";
+import JSZip from "jszip";
 
 jest.mock("@/lib/prisma", () => ({
   prisma: {
     designJob: {
       findUnique: jest.fn(),
-      update: jest.fn(),
-      create: jest.fn()
-    },
-    productProfile: { findFirst: jest.fn() },
-    machineProfile: { findFirst: jest.fn() }
+      update: jest.fn()
+    }
   }
 }));
 
@@ -30,18 +25,22 @@ describe("proof service", () => {
 
   it("renderProof returns a PNG payload", async () => {
     (readTracerAsset as jest.Mock).mockResolvedValue({
-      mimeType: "image/svg+xml",
       buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="8"/></svg>')
     });
     (createTracerAsset as jest.Mock).mockResolvedValue({ id: "proof_asset", url: "/api/tracer/assets/proof_asset" });
 
     const data = await proofService.renderProof({
-      composition: {
-        templateId: "40oz_tumbler_wrap",
-        dpi: 300,
-        items: [{ id: "a", name: "svg", type: "svg", assetId: "svg_1", transformMm: { x: 140, y: 55, scale: 1, rotation: 0, flipH: false, flipV: false }, opacity: 1, locked: false, hidden: false }],
-        order: ["a"],
-        groups: []
+      svgAssetId: "svg_1",
+      templateId: "40oz_tumbler_wrap",
+      placementMm: {
+        scalePercent: 100,
+        rotateDeg: 0,
+        xMm: 140,
+        yMm: 55,
+        mirrorH: false,
+        mirrorV: false,
+        repeatMode: "none",
+        stepMm: 20
       }
     });
 
@@ -53,16 +52,21 @@ describe("proof service", () => {
   it("exportProofPackage writes required files to zip", async () => {
     (prisma.designJob.findUnique as jest.Mock).mockResolvedValue({
       id: "job_1",
-      proofCompositionJson: {
-        templateId: "40oz_tumbler_wrap",
-        dpi: 300,
-        items: [{ id: "a", name: "svg", type: "svg", assetId: "svg_1", transformMm: { x: 140, y: 55, scale: 1, rotation: 0, flipH: false, flipV: false }, opacity: 1, locked: false, hidden: false }],
-        order: ["a"],
-        groups: []
+      sourceSvgAssetId: "svg_1",
+      proofTemplateId: "40oz_tumbler_wrap",
+      proofPlacementMmJson: {
+        scalePercent: 100,
+        rotateDeg: 0,
+        xMm: 140,
+        yMm: 55,
+        mirrorH: false,
+        mirrorV: false,
+        repeatMode: "none",
+        stepMm: 20
       }
     });
     (prisma.designJob.update as jest.Mock).mockResolvedValue({});
-    (readTracerAsset as jest.Mock).mockResolvedValue({ mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="20" height="10"/></svg>') });
+    (readTracerAsset as jest.Mock).mockResolvedValue({ buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="20" height="10"/></svg>') });
     (createTracerAsset as jest.Mock)
       .mockResolvedValueOnce({ id: "proof_png", url: "/api/tracer/assets/proof_png" })
       .mockResolvedValueOnce({ id: "zip_asset", url: "/api/tracer/assets/zip_asset" });
@@ -71,21 +75,13 @@ describe("proof service", () => {
     expect(result.exportAssetId).toBe("zip_asset");
 
     const zipBuffer = (createTracerAsset as jest.Mock).mock.calls[1][0].buffer as Buffer;
-    const tmpZip = path.join(os.tmpdir(), `proof-test-${Date.now()}.zip`);
-    await fs.writeFile(tmpZip, zipBuffer);
+    const zip = await JSZip.loadAsync(zipBuffer);
+    const names = Object.keys(zip.files);
 
-    const { execFile } = await import("node:child_process");
-    const listed = await new Promise<string>((resolve, reject) => {
-      execFile("unzip", ["-l", tmpZip], (error, stdout) => {
-        if (error) return reject(error);
-        resolve(stdout);
-      });
-    });
-
-    expect(listed).toContain("production.svg");
-    expect(listed).toContain("proof.png");
-    expect(listed).toContain("composition.json");
-    expect(listed).toContain("template.json");
-    expect(listed).toContain("README.txt");
+    expect(names).toContain("production.svg");
+    expect(names).toContain("proof.png");
+    expect(names).toContain("template.json");
+    expect(names).toContain("placement.json");
+    expect(names).toContain("README.txt");
   });
 });

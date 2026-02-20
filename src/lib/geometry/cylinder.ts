@@ -1,5 +1,30 @@
 import { placementSchema, type PlacementInput } from "@/schemas/placement";
 
+type LegacyPlacement = {
+  widthMm: number;
+  heightMm: number;
+  offsetXMm: number;
+  offsetYMm: number;
+  rotationDeg: number;
+  anchor: "center" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+};
+
+function toLegacyPlacement(placement: PlacementInput): LegacyPlacement {
+  const parsed = placementSchema.parse(placement);
+  if ("widthMm" in parsed) {
+    return parsed;
+  }
+
+  return {
+    widthMm: parsed.canvas.widthMm,
+    heightMm: parsed.canvas.heightMm,
+    offsetXMm: 0,
+    offsetYMm: 0,
+    rotationDeg: 0,
+    anchor: "top-left"
+  };
+}
+
 export type ResolvedRectMm = {
   xMm: number;
   yMm: number;
@@ -32,7 +57,7 @@ export function unwrapWidthMm(diameterMm: number): number {
 
 /** Resolves a placement + anchor into a canonical top-left rectangle. */
 export function resolveAnchoredRect(placement: PlacementInput): ResolvedRectMm {
-  const parsed = placementSchema.parse(placement);
+  const parsed = toLegacyPlacement(placement);
   const { widthMm, heightMm, offsetXMm, offsetYMm, anchor } = parsed;
 
   switch (anchor) {
@@ -46,6 +71,8 @@ export function resolveAnchoredRect(placement: PlacementInput): ResolvedRectMm {
       return { xMm: offsetXMm, yMm: offsetYMm - heightMm, widthMm, heightMm };
     case "bottom-right":
       return { xMm: offsetXMm - widthMm, yMm: offsetYMm - heightMm, widthMm, heightMm };
+    default:
+      return { xMm: offsetXMm, yMm: offsetYMm, widthMm, heightMm };
   }
 }
 
@@ -93,18 +120,21 @@ function rectWarnings(bounds: ResolvedRectMm, zone: ZoneRectMm): string[] {
 }
 
 function rectToPlacement(rect: ResolvedRectMm, current: PlacementInput): PlacementInput {
-  const { anchor } = current;
+  const normalized = toLegacyPlacement(current);
+  const { anchor } = normalized;
   switch (anchor) {
     case "center":
-      return { ...current, widthMm: rect.widthMm, heightMm: rect.heightMm, offsetXMm: rect.xMm + rect.widthMm / 2, offsetYMm: rect.yMm + rect.heightMm / 2 };
+      return { ...normalized, widthMm: rect.widthMm, heightMm: rect.heightMm, offsetXMm: rect.xMm + rect.widthMm / 2, offsetYMm: rect.yMm + rect.heightMm / 2 };
     case "top-left":
-      return { ...current, widthMm: rect.widthMm, heightMm: rect.heightMm, offsetXMm: rect.xMm, offsetYMm: rect.yMm };
+      return { ...normalized, widthMm: rect.widthMm, heightMm: rect.heightMm, offsetXMm: rect.xMm, offsetYMm: rect.yMm };
     case "top-right":
-      return { ...current, widthMm: rect.widthMm, heightMm: rect.heightMm, offsetXMm: rect.xMm + rect.widthMm, offsetYMm: rect.yMm };
+      return { ...normalized, widthMm: rect.widthMm, heightMm: rect.heightMm, offsetXMm: rect.xMm + rect.widthMm, offsetYMm: rect.yMm };
     case "bottom-left":
-      return { ...current, widthMm: rect.widthMm, heightMm: rect.heightMm, offsetXMm: rect.xMm, offsetYMm: rect.yMm + rect.heightMm };
+      return { ...normalized, widthMm: rect.widthMm, heightMm: rect.heightMm, offsetXMm: rect.xMm, offsetYMm: rect.yMm + rect.heightMm };
     case "bottom-right":
-      return { ...current, widthMm: rect.widthMm, heightMm: rect.heightMm, offsetXMm: rect.xMm + rect.widthMm, offsetYMm: rect.yMm + rect.heightMm };
+      return { ...normalized, widthMm: rect.widthMm, heightMm: rect.heightMm, offsetXMm: rect.xMm + rect.widthMm, offsetYMm: rect.yMm + rect.heightMm };
+    default:
+      return { ...normalized, widthMm: rect.widthMm, heightMm: rect.heightMm, offsetXMm: rect.xMm, offsetYMm: rect.yMm };
   }
 }
 
@@ -122,7 +152,8 @@ export function clampPlacementToZone(placement: PlacementInput, zone: ZoneRectMm
 
 /** Validates rotated bounds against safe zone and returns user-facing warnings. */
 export function validatePlacement(placement: PlacementInput, zone: ZoneRectMm): { ok: boolean; warnings: string[] } {
-  const rotatedBounds = rotateRectBounds(resolveAnchoredRect(placement), placement.rotationDeg);
+  const normalized = toLegacyPlacement(placement);
+  const rotatedBounds = rotateRectBounds(resolveAnchoredRect(normalized), normalized.rotationDeg);
   const warnings = rectWarnings(rotatedBounds, zone);
   return { ok: warnings.length === 0, warnings };
 }

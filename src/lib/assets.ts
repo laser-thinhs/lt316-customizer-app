@@ -3,8 +3,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { AppError } from "@/lib/errors";
 
-const ALLOWED_EXTENSIONS = new Set([".svg", ".png", ".jpg", ".jpeg", ".webp"]);
-const ALLOWED_MIME = new Set(["image/svg+xml", "image/png", "image/jpeg", "image/webp"]);
+const ALLOWED_EXTENSIONS = new Set([".svg"]);
+const ALLOWED_MIME = new Set(["image/svg+xml"]);
 
 export type UploadMime = "image/svg+xml" | "image/png" | "image/jpeg" | "image/webp";
 
@@ -18,7 +18,7 @@ export function storageRoot() {
 }
 
 export function maxAssetSizeBytes() {
-  return 15 * 1024 * 1024;
+  return 10 * 1024 * 1024;
 }
 
 export function sanitizeFilename(value: string): string {
@@ -31,7 +31,7 @@ export function assertSupportedUpload(fileName: string, mimeType: string) {
   const ext = path.extname(fileName).toLowerCase();
   if (!ALLOWED_EXTENSIONS.has(ext) || !ALLOWED_MIME.has(mimeType)) {
     throw new AppError(
-      "Unsupported file type. Allowed: png, jpg, jpeg, svg, webp.",
+      "SVG-only for now; raster support coming next.",
       400,
       "UNSUPPORTED_FILE_TYPE"
     );
@@ -42,6 +42,30 @@ export function assertNoExecutableContent(buffer: Buffer) {
   const header = buffer.subarray(0, 256).toString("utf8").toLowerCase();
   if (header.startsWith("#!") || header.includes("<script")) {
     throw new AppError("Executable content is not allowed", 400, "UNSAFE_CONTENT");
+  }
+
+  // For SVG specifically, check for dangerous attributes during upload
+  if (buffer.toString("utf8").match(/<svg/i)) {
+    const content = buffer.toString("utf8", 0, Math.min(buffer.length, 50000)).toLowerCase();
+    const dangerousPatterns = [
+      /on[a-z]+\s*=/i,           // Event handlers
+      /javascript:/i,             // JavaScript protocol
+      /<script/i,                 // Script tags
+      /<iframe/i,                 // Iframe tags
+      /<embed/i,                  // Embed tags
+      /<object/i,                 // Object tags
+      /(?:data|src):[^/](?!image)/i  // Non-image data URIs
+    ];
+
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(content)) {
+        throw new AppError(
+          "SVG contains potentially dangerous content (scripts, event handlers, etc.)",
+          400,
+          "UNSAFE_SVG_CONTENT"
+        );
+      }
+    }
   }
 }
 
@@ -61,6 +85,12 @@ export function createAssetId() {
 
 export async function ensureDesignJobAssetDir(designJobId: string) {
   const dir = path.join(storageRoot(), "design-jobs", designJobId);
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
+export async function ensureAssetStorageDir(designJobId: string, assetId: string) {
+  const dir = path.join(storageRoot(), "design-jobs", designJobId, assetId);
   await fs.mkdir(dir, { recursive: true });
   return dir;
 }
@@ -150,8 +180,19 @@ export function extractImageDimensions(buffer: Buffer, mimeType: UploadMime): Im
 
 export function normalizeSvg(source: string): string {
   return source
+    // Remove script tags and their content entirely
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    // Remove inline event handlers with or without quotes
     .replace(/on[a-z]+\s*=\s*"[^"]*"/gi, "")
     .replace(/on[a-z]+\s*=\s*'[^']*'/gi, "")
+    .replace(/on[a-z]+\s*=\s*[^\s>]*/gi, "")
+    // Remove style tags
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
+    // Remove dangerous attributes in iframes, embeds, and objects
+    .replace(/<(iframe|embed|object|applet)[^>]*>/gi, "")
+    // Remove href/xlink:href with javascript: protocol
+    .replace(/(?:href|xlink:href)\s*=\s*["']?javascript:[^"'>\s]*["']?/gi, "")
+    // Remove data: URIs that aren't data:image/ (potential vectors for execution)
+    .replace(/(?:src|href|xlink:href)\s*=\s*["']?data:(?!image\/)([^"'>\s])*["']?/gi, "")
     .trim();
 }

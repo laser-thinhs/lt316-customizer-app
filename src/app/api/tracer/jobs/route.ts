@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getTracerProvider } from "../../../../../lib/tracer-provider";
+import { requireApiRole } from "@/lib/api-auth";
 import { createTracerAsset } from "@/lib/tracer-asset-store";
 import { createTracerJob, updateTracerJob } from "@/lib/tracer-job-store";
 
@@ -11,6 +12,7 @@ export async function POST(req: Request) {
   const requestId = req.headers.get("x-request-id") ?? randomUUID();
 
   try {
+    requireApiRole(req, ["admin", "operator"]);
     const form = await req.formData();
     const file = form.get("file");
     const settingsRaw = form.get("settings");

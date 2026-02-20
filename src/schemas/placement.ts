@@ -7,6 +7,9 @@ const anchorSchema = z.enum(["center", "top-left", "top-right", "bottom-left", "
 
 const baseObjectSchema = z.object({
   id: z.string().min(1),
+  layerName: z.string().min(1).optional(),
+  visible: z.boolean().default(true),
+  locked: z.boolean().default(false),
   rotationDeg: finiteNumber,
   anchor: anchorSchema,
   offsetXMm: finiteNumber,
@@ -74,7 +77,11 @@ const imageObjectShape = {
   heightMm: positiveFiniteNumber,
   rotationDeg: finiteNumber.default(0),
   lockAspectRatio: z.boolean().default(true),
-  opacity: finiteNumber.min(0).max(1).default(1)
+  opacity: finiteNumber.min(0).max(1).default(1),
+  layerName: z.string().min(1).optional(),
+  visible: z.boolean().default(true),
+  locked: z.boolean().default(false),
+  zIndex: z.number().int().default(0)
 } as const;
 
 export const imageObjectSchema = z.object(imageObjectShape);
@@ -140,7 +147,10 @@ export const placementDocumentSchema = placementDocumentV2Schema.transform((doc)
       heightMm: legacy.boxHeightMm,
       rotationDeg: legacy.rotationDeg,
       lockAspectRatio: true,
-      opacity: 1
+      opacity: 1,
+      visible: true,
+      locked: false,
+      zIndex: 0
     });
   })
 }));

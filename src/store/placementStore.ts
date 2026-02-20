@@ -1,6 +1,14 @@
 import { create } from "zustand";
 import { clampPlacementToZone, resolveAnchoredRect, type ZoneRectMm, validatePlacement } from "@/lib/geometry/cylinder";
-import type { PlacementInput } from "@/schemas/placement";
+
+type LegacyPlacementInput = {
+  widthMm: number;
+  heightMm: number;
+  offsetXMm: number;
+  offsetYMm: number;
+  rotationDeg: number;
+  anchor: "center" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+};
 
 type ProfileDims = {
   diameterMm: number;
@@ -10,18 +18,18 @@ type ProfileDims = {
 
 type PlacementState = {
   currentAssetId: string | null;
-  placement: PlacementInput;
+  placement: LegacyPlacementInput;
   profile: ProfileDims;
   hardClamp: boolean;
   lockAspectRatio: boolean;
   snapToGrid: boolean;
   gridMm: number;
-  undoStack: PlacementInput[];
-  redoStack: PlacementInput[];
+  undoStack: LegacyPlacementInput[];
+  redoStack: LegacyPlacementInput[];
   setAsset: (assetId: string | null) => void;
   setProfile: (profile: ProfileDims) => void;
-  patchPlacement: (patch: Partial<PlacementInput>) => void;
-  setPlacement: (placement: PlacementInput) => void;
+  patchPlacement: (patch: Partial<LegacyPlacementInput>) => void;
+  setPlacement: (placement: LegacyPlacementInput) => void;
   undo: () => void;
   redo: () => void;
   toggleHardClamp: () => void;
@@ -29,7 +37,7 @@ type PlacementState = {
   toggleSnapToGrid: () => void;
 };
 
-const DEFAULT_PLACEMENT: PlacementInput = {
+const DEFAULT_PLACEMENT: LegacyPlacementInput = {
   widthMm: 50,
   heightMm: 50,
   offsetXMm: 25,
@@ -75,7 +83,7 @@ export const usePlacementStore = create<PlacementState>((set, get) => ({
           offsetYMm: Math.round(nextRaw.offsetYMm / state.gridMm) * state.gridMm
         }
       : nextRaw;
-    const next = state.hardClamp ? clampPlacementToZone(snapped, zone) : snapped;
+    const next = state.hardClamp ? (clampPlacementToZone(snapped, zone) as LegacyPlacementInput) : snapped;
 
     set({
       placement: next,

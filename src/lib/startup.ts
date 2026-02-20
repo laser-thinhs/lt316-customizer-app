@@ -1,13 +1,18 @@
 import { prisma } from "@/lib/prisma";
+import { AppError } from "@/lib/errors";
+import { validateAuthConfig } from "@/lib/api-auth";
 
 let startupChecksRan = false;
+let startupSkipLogged = false;
 
 export function assertDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL;
 
   if (!databaseUrl) {
-    throw new Error(
-      "Missing required DATABASE_URL. Set DATABASE_URL in your .env file before starting the app."
+    throw new AppError(
+      "Database configuration missing. Set DATABASE_URL.",
+      500,
+      "DATABASE_URL_MISSING"
     );
   }
 }
@@ -17,14 +22,38 @@ export async function assertDatabaseConnectivity() {
     await prisma.$queryRaw`SELECT 1`;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown DB error";
-    throw new Error(`Database connectivity check failed: ${message}`);
+    throw new AppError(
+      "Database connectivity check failed. Verify DATABASE_URL points to a reachable database.",
+      503,
+      "DATABASE_CONNECTIVITY_ERROR",
+      { reason: message }
+    );
   }
 }
 
 export async function runStartupChecks() {
   if (startupChecksRan) return;
 
-  assertDatabaseUrl();
-  await assertDatabaseConnectivity();
-  startupChecksRan = true;
+  try {
+    assertDatabaseUrl();
+    await assertDatabaseConnectivity();
+    validateAuthConfig();
+    startupChecksRan = true;
+  } catch (error) {
+    const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+    const skipCheck = process.env.SKIP_STARTUP_DB_CHECK === "1";
+    const isNonProduction = process.env.NODE_ENV !== "production";
+
+    if (isBuildPhase || skipCheck || isNonProduction) {
+      if (!startupSkipLogged) {
+        const reason = error instanceof Error ? error.message : "unknown error";
+        console.warn(`Startup checks skipped in non-production: ${reason}`);
+        startupSkipLogged = true;
+      }
+      startupChecksRan = true;
+      return;
+    }
+
+    throw error;
+  }
 }

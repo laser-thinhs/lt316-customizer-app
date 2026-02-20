@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDesignJobById } from "@/services/design-job.service";
 import { fail } from "@/lib/response";
+import { requireApiRole } from "@/lib/api-auth";
 import { PlacementObject } from "@/schemas/placement";
 
 type Params = { params: Promise<{ id: string }> };
@@ -89,14 +90,11 @@ function objectToSvg(object: PlacementObject, translateX = 0): string {
 
 export async function POST(request: Request, { params }: Params) {
   try {
+    requireApiRole(request, ["admin", "operator"]);
     const { id } = await params;
     const job = await getDesignJobById(id);
     const includeGuides = new URL(request.url).searchParams.get("guides") === "1";
-    const sortedObjects = [...job.placementJson.objects].sort((a, b) => {
-      const aZ = "zIndex" in a ? a.zIndex : 0;
-      const bZ = "zIndex" in b ? b.zIndex : 0;
-      return aZ === bZ ? a.id.localeCompare(b.id) : aZ - bZ;
-    });
+    const sortedObjects = job.placementJson.objects.filter((object) => object.visible !== false);
 
     const wrap = (job.placementJson as { wrap?: { enabled?: boolean; wrapWidthMm?: number; seamXmm: number; microOverlapMm?: number } }).wrap;
     const wrapEnabled = Boolean(wrap?.enabled);

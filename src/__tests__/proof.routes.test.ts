@@ -22,21 +22,17 @@ describe("proof routes", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        composition: {
-          templateId: "40oz_tumbler_wrap",
-          dpi: 300,
-          items: [{
-            id: "item-1",
-            name: "Layer",
-            type: "text",
-            text: "hello",
-            transformMm: { x: 140, y: 55, scale: 1, rotation: 0, flipH: false, flipV: false },
-            opacity: 1,
-            locked: false,
-            hidden: false
-          }],
-          order: ["item-1"],
-          groups: []
+        svgAssetId: "svg_1",
+        templateId: "40oz_tumbler_wrap",
+        placementMm: {
+          scalePercent: 100,
+          rotateDeg: 0,
+          xMm: 140,
+          yMm: 55,
+          mirrorH: false,
+          mirrorV: false,
+          repeatMode: "none",
+          stepMm: 20
         }
       })
     }));
