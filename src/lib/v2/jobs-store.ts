@@ -84,10 +84,17 @@ export async function getV2Job(jobId: string) {
 export async function listV2Jobs(status?: JobStatus) {
   await ensureDir(recordsRoot);
   const entries = await withFsRetries(() => fs.readdir(recordsRoot));
+  const recordFiles = entries.filter((item) => item.endsWith(".json") && !item.includes(".asset."));
   const jobs = await Promise.all(
-    entries.filter((item) => item.endsWith(".json")).map(async (item) => readJsonFile<DesignJob>(path.join(recordsRoot, item)))
+    recordFiles.map(async (item) => {
+      try {
+        return await readJsonFile<DesignJob>(path.join(recordsRoot, item));
+      } catch {
+        return null;
+      }
+    })
   );
-  return jobs.filter((j): j is DesignJob => j !== null && (!status || j.status === status));
+  return jobs.filter((j): j is DesignJob => j !== null && typeof j.status === "string" && (!status || j.status === status));
 }
 
 export async function updateV2Job(jobId: string, patch: Partial<DesignJob>) {

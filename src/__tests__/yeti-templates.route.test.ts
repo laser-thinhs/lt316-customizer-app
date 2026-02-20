@@ -14,7 +14,9 @@ describe("yeti template routes", () => {
   });
 
   it("returns a style by id", async () => {
-    const response = await getStyle(new Request("http://localhost/api/templates/yeti/rambler-20oz"), { params: Promise.resolve({ styleId: "rambler-20oz" }) });
+    const response = await getStyle(new Request("http://localhost/api/templates/yeti/rambler-20oz"), {
+      params: Promise.resolve({ styleId: "rambler-20oz" })
+    });
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.data.id).toBe("rambler-20oz");
