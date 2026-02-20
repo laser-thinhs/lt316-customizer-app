@@ -49,5 +49,5 @@ React testing warnings (act/open-handle) are suppressed in text-editor test wher
 2. **Enable HTTPS only** (Vercel default)
 3. **Use environment-specific .env files** (never commit .env.local)
 4. **Rotate API_KEY** periodically
-5. **Monitor dependency updates** (as of Feb 20, 2026: `npm audit --omit=dev --audit-level=high` reports **0** production vulnerabilities; full audit reports **32 high** dev-tooling vulnerabilities in eslint/jest/minimatch chains, requiring major toolchain upgrades for full remediation)
+5. **Monitor dependency updates** (as of Feb 20, 2026: both `npm audit --omit=dev --audit-level=high` and `npm audit --audit-level=high` report **0 vulnerabilities** after adding npm `overrides` for transitive `minimatch`/`glob`; verify lockfile updates on each dependency refresh)
 6. **Add rate limiting** if exposing public endpoints to untrusted clients
