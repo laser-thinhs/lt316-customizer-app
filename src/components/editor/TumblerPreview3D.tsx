@@ -6,6 +6,7 @@ type Props = {
   diameterMm?: number | null;
   heightMm?: number | null;
   designParams?: any;
+  secondaryDesignParams?: any;
   designSvgUrl?: string | null;
   rotationDeg?: number | null;
   offsetYMm?: number | null;
@@ -18,6 +19,7 @@ export default function TumblerPreview3D({
   diameterMm = 76.2,
   heightMm = 100,
   designParams,
+  secondaryDesignParams,
   designSvgUrl,
   rotationDeg = 0,
   offsetYMm = 0,
@@ -32,6 +34,10 @@ export default function TumblerPreview3D({
   const resolvedDesignParams = useMemo(
     () => (designSvgUrl ? { ...(designParams ?? {}), assetUrl: designSvgUrl } : designParams),
     [designParams, designSvgUrl]
+  );
+  const designLayers = useMemo(
+    () => [resolvedDesignParams, secondaryDesignParams].filter((layer) => Boolean(layer?.assetUrl)),
+    [resolvedDesignParams, secondaryDesignParams]
   );
 
   // Ensure all values are valid numbers
@@ -102,44 +108,44 @@ export default function TumblerPreview3D({
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Draw image if available
-        if (resolvedDesignParams?.assetUrl) {
-          setDebugInfo(`Loading image from: ${resolvedDesignParams.assetUrl}`);
-          
-          const img = new Image();
-          img.crossOrigin = "anonymous";
-          
-          await new Promise<void>((resolve, reject) => {
-            img.onload = () => {
-              setDebugInfo(`Image loaded successfully: ${img.width}x${img.height}`);
-              
-              const x = (resolvedDesignParams.xMm || 0) * mmScale;
-              const y = (resolvedDesignParams.yMm ?? offsetYMm ?? 0) * mmScale;
-              const w = (resolvedDesignParams.widthMm || 100) * mmScale;
-              const h = (resolvedDesignParams.heightMm || 100) * mmScale;
-              const rot = (((resolvedDesignParams.rotationDeg ?? rotationDeg ?? 0) * Math.PI) / 180);
+        // Draw image layers if available
+        if (designLayers.length) {
+          setDebugInfo(`Loading ${designLayers.length} artwork layer(s)`);
 
-              ctx.save();
-              ctx.globalAlpha = resolvedDesignParams.opacity || 1;
+          for (const layer of designLayers) {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
 
-              // Rotate around center
-              const centerX = x + w / 2;
-              const centerY = y + h / 2;
-              ctx.translate(centerX, centerY);
-              ctx.rotate(rot);
-              ctx.translate(-centerX, -centerY);
+            await new Promise<void>((resolve, reject) => {
+              img.onload = () => {
+                const x = (layer.xMm || 0) * mmScale;
+                const y = (layer.yMm ?? offsetYMm ?? 0) * mmScale;
+                const w = (layer.widthMm || 100) * mmScale;
+                const h = (layer.heightMm || 100) * mmScale;
+                const rot = (((layer.rotationDeg ?? rotationDeg ?? 0) * Math.PI) / 180);
 
-              ctx.drawImage(img, x, y, w, h);
-              ctx.restore();
-              
-              resolve();
-            };
-            img.onerror = (err) => {
-              setDebugInfo(`Image load error: ${err}`);
-              reject(new Error("Failed to load image"));
-            };
-            img.src = resolvedDesignParams.assetUrl;
-          });
+                ctx.save();
+                ctx.globalAlpha = layer.opacity || 1;
+
+                // Rotate around center
+                const centerX = x + w / 2;
+                const centerY = y + h / 2;
+                ctx.translate(centerX, centerY);
+                ctx.rotate(rot);
+                ctx.translate(-centerX, -centerY);
+
+                ctx.drawImage(img, x, y, w, h);
+                ctx.restore();
+
+                resolve();
+              };
+              img.onerror = (err) => {
+                setDebugInfo(`Image load error: ${err}`);
+                reject(new Error("Failed to load image"));
+              };
+              img.src = layer.assetUrl;
+            });
+          }
         } else {
           setDebugInfo("No asset URL provided");
         }
@@ -305,7 +311,7 @@ export default function TumblerPreview3D({
     };
 
     initThree();
-  }, [safeDiameterMm, safeHeightMm, resolvedDesignParams, textureReloadKey, rotationDeg, offsetYMm]);
+  }, [safeDiameterMm, safeHeightMm, resolvedDesignParams, designLayers, textureReloadKey, rotationDeg, offsetYMm]);
 
   if (error) {
     return (

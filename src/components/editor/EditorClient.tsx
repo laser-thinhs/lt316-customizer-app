@@ -104,6 +104,7 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
   const [saving, setSaving] = useState(false);
   const [assets, setAssets] = useState<AssetRef[]>(initialAssets);
   const [activeAsset, setActiveAsset] = useState<AssetRef | null>(initialAssets[0] ?? null);
+  const [secondaryAssetId, setSecondaryAssetId] = useState<string | null>(initialAssets[1]?.id ?? null);
   const [previewSrc, setPreviewSrc] = useState<string | null>(initialAssets[0]?.url ?? null);
   const [clampEnabled, setClampEnabled] = useState(true);
   const [search, setSearch] = useState("");
@@ -271,6 +272,19 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
 
   const mmScale = 3;
   const rect = clampEnabled ? derived.clampedRect : derived.resolvedRect;
+  const secondaryAsset = useMemo(() => {
+    if (!secondaryAssetId) return null;
+    return assets.find((asset) => asset.id === secondaryAssetId) ?? null;
+  }, [assets, secondaryAssetId]);
+  const secondaryOffsetXMm = ((store.placement.offsetXMm + (derived.zone.widthMm / 2)) % derived.zone.widthMm + derived.zone.widthMm) % derived.zone.widthMm;
+  const secondaryPlacement = {
+    xMm: secondaryOffsetXMm,
+    yMm: store.placement.offsetYMm,
+    widthMm: store.placement.widthMm,
+    heightMm: store.placement.heightMm,
+    rotationDeg: store.placement.rotationDeg + 10,
+    opacity: 1
+  };
 
   return (
     <main className="grid grid-cols-1 gap-4 p-4 xl:grid-cols-[420px_1fr_360px]">
@@ -409,17 +423,30 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
         <h2 className="mb-2 font-semibold">2D Unwrapped Canvas</h2>
         <CanvasRenderer
           canvasSize={{ widthMm: derived.zone.widthMm, heightMm: derived.zone.heightMm }}
-          assets={activeAsset ? [{
-            id: activeAsset.id,
-            type: activeAsset.mime?.includes('svg') ? 'svg' : 'image',
-            url: activeAsset.url,
-            xMm: store.placement.offsetXMm,
-            yMm: store.placement.offsetYMm,
-            widthMm: store.placement.widthMm,
-            heightMm: store.placement.heightMm,
-            rotationDeg: store.placement.rotationDeg,
-            opacity: 1
-          }] : []}
+          assets={[
+            ...(activeAsset ? [{
+              id: activeAsset.id,
+              type: (activeAsset.mime?.includes('svg') ? 'svg' : 'image') as 'svg' | 'image',
+              url: activeAsset.url,
+              xMm: store.placement.offsetXMm,
+              yMm: store.placement.offsetYMm,
+              widthMm: store.placement.widthMm,
+              heightMm: store.placement.heightMm,
+              rotationDeg: store.placement.rotationDeg,
+              opacity: 1
+            }] : []),
+            ...(secondaryAsset ? [{
+              id: secondaryAsset.id,
+              type: (secondaryAsset.mime?.includes('svg') ? 'svg' : 'image') as 'svg' | 'image',
+              url: secondaryAsset.url,
+              xMm: secondaryPlacement.xMm,
+              yMm: secondaryPlacement.yMm,
+              widthMm: secondaryPlacement.widthMm,
+              heightMm: secondaryPlacement.heightMm,
+              rotationDeg: secondaryPlacement.rotationDeg,
+              opacity: secondaryPlacement.opacity
+            }] : [])
+          ]}
           selectedAssetId={activeAsset?.id}
           mmScale={3}
           gridEnabled={true}
@@ -448,12 +475,39 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
             opacity: 1,
             mmScale: 3
           } : null}
+          secondaryDesignParams={secondaryAsset ? {
+            assetUrl: secondaryAsset.url,
+            assetType: secondaryAsset.mime?.includes('svg') ? 'svg' : 'image',
+            xMm: secondaryPlacement.xMm,
+            yMm: secondaryPlacement.yMm,
+            widthMm: secondaryPlacement.widthMm,
+            heightMm: secondaryPlacement.heightMm,
+            rotationDeg: secondaryPlacement.rotationDeg,
+            opacity: secondaryPlacement.opacity,
+            mmScale: 3
+          } : null}
           rotationDeg={store.placement.rotationDeg}
           offsetYMm={store.placement.offsetYMm}
           engraveZoneHeightMm={profile.engraveZoneHeightMm}
           onTextureErrorChange={setArtworkError}
         />
         <p className="mt-2 text-xs text-slate-600">Asset: {activeAsset?.id ?? "none"}</p>
+        <label className="mt-2 block text-xs text-slate-700">
+          Secondary artwork
+          <select
+            className="mt-1 w-full rounded border bg-white px-2 py-1"
+            value={secondaryAssetId ?? ""}
+            onChange={(e) => setSecondaryAssetId(e.target.value || null)}
+          >
+            <option value="">None</option>
+            {assets.filter((asset) => asset.id !== activeAsset?.id).map((asset) => (
+              <option key={asset.id} value={asset.id}>{asset.filename}</option>
+            ))}
+          </select>
+        </label>
+        {secondaryAsset ? (
+          <p className="text-xs text-slate-600">Secondary is auto-positioned opposite the primary artwork for balanced viewing.</p>
+        ) : null}
         <div className="mt-3 space-y-2 rounded border bg-slate-50 p-2 text-xs">
           <p className="font-semibold">Artwork placement</p>
           <label className="block">Scale ({artworkPlacement.scale.toFixed(2)})
