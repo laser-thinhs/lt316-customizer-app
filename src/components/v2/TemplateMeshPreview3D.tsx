@@ -56,6 +56,19 @@ function fitBody(sceneObject: THREE.Object3D): BodyFit {
   };
 }
 
+function findWrapMesh(root: THREE.Object3D): THREE.Mesh | null {
+  let result: THREE.Mesh | null = null;
+  root.traverse((node) => {
+    if (result) return;
+    if (!(node instanceof THREE.Mesh)) return;
+    const nameLower = node.name.toLowerCase();
+    if (nameLower.includes("wrap") || nameLower.includes("label") || nameLower.includes("decal")) {
+      result = node;
+    }
+  });
+  return result;
+}
+
 function configureBodyMaterials(root: THREE.Object3D, color: THREE.Color) {
   root.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return;
@@ -67,14 +80,21 @@ function configureBodyMaterials(root: THREE.Object3D, color: THREE.Color) {
       const lowered = `${node.name} ${material.name}`.toLowerCase();
       const isLid = lowered.includes("lid") || lowered.includes("cap");
       const isBody = lowered.includes("body") || lowered.includes("shell") || lowered.includes("cup") || lowered.includes("wraparea");
+      const isWrap = lowered.includes("wrap") || lowered.includes("label") || lowered.includes("decal");
 
-      if (isBody || !isLid) {
+      if (isWrap) {
+        material.color = new THREE.Color("#ffffff");
+        material.metalness = 0.08;
+        material.roughness = 0.58;
+        material.transparent = true;
+        material.side = THREE.DoubleSide;
+      } else if (isBody || !isLid) {
         material.color = color.clone();
         material.metalness = 0.42;
         material.roughness = 0.34;
       }
 
-      if (isLid) {
+      if (isLid && !isWrap) {
         material.metalness = 0.18;
         material.roughness = 0.6;
       }
@@ -103,8 +123,8 @@ function SceneCamera({ focus, radius }: { focus: THREE.Vector3; radius: number }
 function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wrapWidthMm, uvTransform, debugUv }: Props) {
   const { scene } = useGLTF(meshPath);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
-  const labelRef = useRef<THREE.Mesh>(null);
   const previousTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const debugRef = useRef<{ wrapMesh: THREE.Mesh | null }>({ wrapMesh: null });
 
   const cloned = useMemo(() => scene.clone(true), [scene]);
   const bodyColor = useMemo(() => resolveColor(colorId, colorHex), [colorId, colorHex]);
@@ -112,18 +132,26 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
 
   useEffect(() => {
     configureBodyMaterials(cloned, bodyColor);
-  }, [cloned, bodyColor]);
+    const existing = findWrapMesh(cloned);
+    if (!existing && debugUv) {
+      console.warn("[3D Preview] No wrap mesh found in loaded model");
+    }
+    debugRef.current.wrapMesh = existing;
+  }, [cloned, bodyColor, debugUv]);
 
   useEffect(() => {
-    if (!overlaySvgPath || !labelRef.current) {
+    const wrapMesh = debugRef.current.wrapMesh;
+    if (!overlaySvgPath || !wrapMesh) {
       if (previousTextureRef.current) {
         previousTextureRef.current.dispose();
         previousTextureRef.current = null;
       }
-      const labelMaterial = labelRef.current?.material;
-      if (labelMaterial instanceof THREE.MeshStandardMaterial) {
-        labelMaterial.map = null;
-        labelMaterial.needsUpdate = true;
+      const materials = Array.isArray(wrapMesh?.material) ? wrapMesh.material : [wrapMesh?.material];
+      for (const material of materials) {
+        if (material instanceof THREE.MeshStandardMaterial) {
+          material.map = null;
+          material.needsUpdate = true;
+        }
       }
       return;
     }
@@ -132,11 +160,21 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
 
     const applyOverlay = async () => {
       try {
-        const response = await fetch(overlaySvgPath);
+        if (debugUv) console.log("[3D Preview] Loading texture from:", overlaySvgPath);
+        const response = await fetch(overlaySvgPath, {
+          method: "GET",
+          headers: { Accept: "image/svg+xml,*/*" },
+          mode: "cors"
+        });
         if (!response.ok) {
-          throw new Error(`Could not load SVG preview from ${overlaySvgPath}`);
+          throw new Error(`HTTP ${response.status}: Could not load SVG preview from ${overlaySvgPath}`);
         }
+
         const svgText = await response.text();
+        if (!svgText || svgText.trim().length === 0) {
+          throw new Error("SVG content is empty");
+        }
+
         const texture = await buildWrapTexture({
           svgText,
           rotateDeg: placement?.rotation_deg ?? 0,
@@ -147,7 +185,8 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
           uvTransform,
           debugOverlay: { enabled: debugUv }
         });
-        if (cancelled || !labelRef.current) {
+
+        if (cancelled || !wrapMesh) {
           texture.dispose();
           return;
         }
@@ -155,14 +194,18 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
         if (previousTextureRef.current) previousTextureRef.current.dispose();
         previousTextureRef.current = texture;
 
-        const labelMaterial = labelRef.current.material;
-        if (labelMaterial instanceof THREE.MeshStandardMaterial) {
-          labelMaterial.map = texture;
-          labelMaterial.transparent = true;
-          labelMaterial.alphaTest = 0.03;
-          labelMaterial.needsUpdate = true;
+        const materials = Array.isArray(wrapMesh.material) ? wrapMesh.material : [wrapMesh.material];
+        for (const material of materials) {
+          if (material instanceof THREE.MeshStandardMaterial) {
+            material.map = texture;
+            material.transparent = true;
+            material.alphaTest = 0.03;
+            material.needsUpdate = true;
+            if (debugUv) console.log("[3D Preview] Texture applied to wrap mesh");
+          }
         }
-      } catch {
+      } catch (error) {
+        if (debugUv) console.error("[3D Preview] Failed to load texture:", error);
       }
     };
 
@@ -210,15 +253,6 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
 
       <primitive object={cloned} />
 
-      <mesh
-        ref={labelRef}
-        position={[fit.center.x, fit.center.y, fit.center.z]}
-        rotation={[0, Math.PI, 0]}
-      >
-        <cylinderGeometry args={[fit.bodyRadius * 1.014, fit.bodyRadius * 1.008, fit.bodyHeight, 96, 1, true]} />
-        <meshStandardMaterial color="#ffffff" metalness={0.08} roughness={0.58} transparent opacity={0.98} side={THREE.DoubleSide} />
-      </mesh>
-
       <ContactShadows position={[fit.center.x, fit.center.y - fit.bodyHeight * 0.62, fit.center.z]} opacity={0.5} blur={2.8} scale={fit.bodyRadius * 5.5} far={2.2} />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[fit.center.x, fit.center.y - fit.bodyHeight * 0.64, fit.center.z]}>
         <planeGeometry args={[8, 8]} />
@@ -242,18 +276,30 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
 
 export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, className, colorHex, colorId, placement, wrapWidthMm, uvTransform, debugUv }: Props) {
   const [pathState, setPathState] = useState<PathState>("checking");
+  const [textureError, setTextureError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     const verify = async () => {
       setPathState("checking");
+      setTextureError(null);
       try {
         const response = await fetch(meshPath, { method: "HEAD" });
         if (cancelled) return;
-        setPathState(response.ok ? "ready" : "missing");
-      } catch {
-        if (!cancelled) setPathState("missing");
+        if (response.ok) {
+          setPathState("ready");
+          if (debugUv) console.log("[3D Preview] Mesh loaded:", meshPath);
+        } else {
+          setPathState("missing");
+          setTextureError(`Mesh returned ${response.status}`);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPathState("missing");
+          setTextureError(error instanceof Error ? error.message : "Unknown error");
+          if (debugUv) console.error("[3D Preview] Mesh load error:", error);
+        }
       }
     };
 
@@ -261,14 +307,19 @@ export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, classN
     return () => {
       cancelled = true;
     };
-  }, [meshPath]);
+  }, [meshPath, debugUv]);
 
   if (pathState === "checking") {
     return <div className={`flex h-full w-full items-center justify-center text-xs text-slate-200 ${className ?? ""}`.trim()}>Loading 3D model…</div>;
   }
 
   if (pathState === "missing") {
-    return <div className={`flex h-full w-full items-center justify-center px-4 text-center text-xs text-amber-200 ${className ?? ""}`.trim()}>Model not found at {meshPath}</div>;
+    return (
+      <div className={`flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center text-xs text-amber-200 ${className ?? ""}`.trim()}>
+        <div>Model not found</div>
+        <div className="text-xs text-amber-300">{textureError || meshPath}</div>
+      </div>
+    );
   }
 
   return (
