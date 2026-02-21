@@ -123,8 +123,10 @@ function SceneCamera({ focus, radius }: { focus: THREE.Vector3; radius: number }
 function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wrapWidthMm, uvTransform, debugUv }: Props) {
   const { scene } = useGLTF(meshPath);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
+  const fallbackWrapRef = useRef<THREE.Mesh>(null);
   const previousTextureRef = useRef<THREE.CanvasTexture | null>(null);
   const debugRef = useRef<{ wrapMesh: THREE.Mesh | null }>({ wrapMesh: null });
+  const [hasNativeWrap, setHasNativeWrap] = useState(false);
 
   const cloned = useMemo(() => scene.clone(true), [scene]);
   const bodyColor = useMemo(() => resolveColor(colorId, colorHex), [colorId, colorHex]);
@@ -133,10 +135,12 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
   useEffect(() => {
     configureBodyMaterials(cloned, bodyColor);
     const existing = findWrapMesh(cloned);
+    setHasNativeWrap(Boolean(existing));
+    const resolvedWrap = existing ?? fallbackWrapRef.current;
     if (!existing && debugUv) {
-      console.warn("[3D Preview] No wrap mesh found in loaded model");
+      console.warn("[3D Preview] No wrap mesh found in loaded model, using fallback wrap cylinder");
     }
-    debugRef.current.wrapMesh = existing;
+    debugRef.current.wrapMesh = resolvedWrap;
   }, [cloned, bodyColor, debugUv]);
 
   useEffect(() => {
@@ -213,7 +217,7 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
     return () => {
       cancelled = true;
     };
-  }, [overlaySvgPath, debugUv, placement?.rotation_deg, placement?.scale, placement?.seamX_mm, placement?.wrapEnabled, uvTransform, wrapWidthMm]);
+  }, [overlaySvgPath, debugUv, meshPath, placement?.rotation_deg, placement?.scale, placement?.seamX_mm, placement?.wrapEnabled, uvTransform, wrapWidthMm]);
 
   useEffect(() => {
     const texture = previousTextureRef.current;
@@ -252,6 +256,16 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
       <SceneCamera focus={fit.center} radius={Math.max(fit.bodyRadius, 0.35)} />
 
       <primitive object={cloned} />
+
+      <mesh
+        ref={fallbackWrapRef}
+        visible={!hasNativeWrap}
+        position={[fit.center.x, fit.center.y, fit.center.z]}
+        rotation={[0, Math.PI, 0]}
+      >
+        <cylinderGeometry args={[fit.bodyRadius * 1.014, fit.bodyRadius * 1.008, fit.bodyHeight, 96, 1, true]} />
+        <meshStandardMaterial color="#ffffff" metalness={0.08} roughness={0.58} transparent opacity={0.98} side={THREE.DoubleSide} />
+      </mesh>
 
       <ContactShadows position={[fit.center.x, fit.center.y - fit.bodyHeight * 0.62, fit.center.z]} opacity={0.5} blur={2.8} scale={fit.bodyRadius * 5.5} far={2.2} />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[fit.center.x, fit.center.y - fit.bodyHeight * 0.64, fit.center.z]}>
