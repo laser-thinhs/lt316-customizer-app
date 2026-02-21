@@ -172,6 +172,7 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
 
     const seamShift = placement?.wrapEnabled && wrapWidthMm && wrapWidthMm > 0 ? (placement.seamX_mm ?? 0) / wrapWidthMm : 0;
     const rotationDeg = placement?.rotation_deg ?? 0;
+    const snappedRotationDeg = Math.round(rotationDeg / 90) * 90;
     const scale = Math.max(placement?.scale ?? 1, 0.15);
     const baseRotationDeg = uvTransform?.rotateDeg ?? 0;
     const flipU = uvTransform?.flipU ? -1 : 1;
@@ -180,7 +181,7 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
     const vOffset = uvTransform?.vOffset ?? 0;
 
     texture.center.set(0.5, 0.5);
-    texture.rotation = THREE.MathUtils.degToRad(baseRotationDeg + rotationDeg);
+    texture.rotation = THREE.MathUtils.degToRad(baseRotationDeg + snappedRotationDeg);
     texture.repeat.set((1 / scale) * flipU, flipV);
     texture.offset.set(THREE.MathUtils.euclideanModulo(-seamShift + uOffset, 1), vOffset);
     texture.needsUpdate = true;
