@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { objectPresets } from "@/core/v2/presets";
 import { DesignAsset, DesignJob, Placement } from "@/core/v2/types";
 import type { YetiTemplateManifest, YetiTemplateStyle } from "@/lib/yeti-templates";
@@ -8,6 +9,7 @@ import type { YetiTemplateManifest, YetiTemplateStyle } from "@/lib/yeti-templat
 type Props = { initialJobId?: string };
 
 const saveDebounceMs = 350;
+const TemplateMeshPreview3D = dynamic(() => import("@/components/v2/TemplateMeshPreview3D"), { ssr: false });
 
 function buildTemplateObject(style: YetiTemplateStyle) {
   const width = Math.round(Math.PI * style.diameter_mm);
@@ -322,18 +324,15 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
                 </div>
               </div>
               <div className="rounded border p-3">
-                <div className="mb-2 text-sm">3D Preview (MVP fallback)</div>
+                <div className="mb-2 text-sm">3D Preview</div>
                 <div className="flex h-[380px] items-center justify-center rounded bg-slate-900 text-slate-200">
-                  <div className="text-center text-sm">
-                    <div>{objectDef.name}</div>
-                    <div>Loaded mesh: {job.templateMeshPath ?? "n/a"}</div>
-                    <div>Color: {selectedColor?.label ?? job.colorId ?? "n/a"} ({selectedColor?.hex ?? "n/a"})</div>
-                    <div>Design overlay: {job.templatePreviewSvgPath ?? "upload only"}</div>
-                    <div>Pos {placement.x_mm.toFixed(1)} / {placement.y_mm.toFixed(1)} mm</div>
-                    <div>Scale {placement.scale.toFixed(2)} · Rot {placement.rotation_deg}°</div>
-                    <div>Wrap {placement.wrapEnabled ? "ON" : "OFF"} · Seam {placement.seamX_mm.toFixed(1)} mm</div>
-                  </div>
+                  {job.templateMeshPath ? (
+                    <TemplateMeshPreview3D meshPath={job.templateMeshPath} overlaySvgPath={previewHref ?? undefined} className="h-full w-full" />
+                  ) : (
+                    <div className="text-center text-sm">No mesh selected.</div>
+                  )}
                 </div>
+                <div className="mt-2 text-center text-xs text-slate-600">Color: {selectedColor?.label ?? job.colorId ?? "n/a"} · Design: {job.templatePreviewSvgPath ?? "upload only"}</div>
               </div>
             </div>
           ) : null}
