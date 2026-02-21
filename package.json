@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "dev:up": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-up.ps1",
+    "dev:recover": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-recover.ps1",
     "stack:up": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stack-up.ps1",
     "stack:down": "docker compose down",
     "stack:ps": "docker compose ps",
