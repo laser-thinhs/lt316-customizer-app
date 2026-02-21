@@ -57,6 +57,50 @@ export type DesignJob = {
   templateGblPath?: string;
   templatePreviewSvgPath?: string;
   templateMeshPath?: string;
+  bedPresetId?: string;
+  bedLayoutOverrideEnabled?: boolean;
+  bedLayoutOverride?: BedLayout;
+  selectedAdminAssetIds?: string[];
+};
+
+export type BedPreset = {
+  id: string;
+  name: string;
+  isDefault?: boolean;
+  bedW_mm: number;
+  bedH_mm: number;
+  grid: {
+    enabled: boolean;
+    spacing: number;
+    offsetX_mm: number;
+    offsetY_mm: number;
+    snapToGrid: boolean;
+    showIntersections: boolean;
+  };
+  rotaryDefaults: {
+    showRotary: boolean;
+    axisY_mm: number;
+    chuckX_mm: number;
+    tailstockX_mm: number;
+    cylinderDiameter_mm: number;
+  };
+  holes: {
+    gridEnabled: boolean;
+    spacing: number;
+    offsetX_mm: number;
+    offsetY_mm: number;
+    customHoles: Array<{ x_mm: number; y_mm: number }>;
+  };
+};
+
+export type AdminAssetType = "lightburn-system" | "hatch-library" | "other";
+
+export type AdminAssetRecord = {
+  id: string;
+  type: AdminAssetType;
+  originalFilename: string;
+  storedPath: string;
+  createdAt: string;
 };
 
 export type ProductionConfig = {

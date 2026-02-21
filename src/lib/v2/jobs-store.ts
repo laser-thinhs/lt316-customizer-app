@@ -5,6 +5,7 @@ import { BedLayout, DesignAsset, DesignJob, JobStatus, Placement, ProductionConf
 import { objectPresets } from "@/core/v2/presets";
 import { generateLightBurnSvg } from "@/core/export/lightburnSvg";
 import { atomicWriteJson, ensureDir, jobsRoot, readJsonFile, recordsRoot, withFsRetries } from "@/lib/v2/storage";
+import { bedPresetToLayout, getDefaultBedPreset } from "@/lib/v2/bed-presets-store";
 
 const uploadsRoot = path.join(process.cwd(), "public", "uploads", "v2");
 
@@ -22,17 +23,6 @@ function defaultPlacement(objectDefinitionId: string): Placement {
     coordinateSpace: "unwrapped_mm",
     wrapEnabled: object.type === "cylinder",
     seamX_mm: object.defaultSeam_mm
-  };
-}
-
-function defaultBedLayout(): BedLayout {
-  return {
-    bedW_mm: 300,
-    bedH_mm: 300,
-    grid: { spacing: 25, offsetX: 0, offsetY: 0, enabled: true },
-    customHoles: [],
-    placedItem: { x: 150, y: 150, rotation: 0 },
-    rotaryConfig: { axisY: 150, chuckX: 45, tailstockX: 255, enabled: true, cylinderGhostDiameter: 80 }
   };
 }
 
@@ -57,6 +47,8 @@ export async function createV2Job(input: {
 }) {
   const objectId = input.objectDefinitionId ?? objectPresets[0].id;
   const stamp = nowIso();
+  const defaultPreset = await getDefaultBedPreset();
+  const defaultBed = bedPresetToLayout(defaultPreset);
   const job: DesignJob = {
     id: `v2_${randomUUID().slice(0, 12)}`,
     status: "draft",
@@ -64,7 +56,9 @@ export async function createV2Job(input: {
     customerEmail: input.customerEmail,
     objectDefinitionId: objectId,
     placement: defaultPlacement(objectId),
-    bedLayout: defaultBedLayout(),
+    bedPresetId: defaultPreset.id,
+    bedLayoutOverrideEnabled: false,
+    bedLayout: defaultBed,
     productTemplateId: input.productTemplateId,
     colorId: input.colorId,
     templateDesignId: input.templateDesignId,
@@ -173,6 +167,13 @@ export async function generateV2Artifacts(jobId: string) {
     generatedAt: nowIso(),
     destination,
     productionConfig: job.productionConfig as ProductionConfig | undefined,
+    bedConfig: {
+      bedPresetId: job.bedPresetId,
+      overrideEnabled: job.bedLayoutOverrideEnabled ?? false,
+      override: job.bedLayoutOverride,
+      effectiveLayout: job.bedLayout
+    },
+    selectedAdminAssetIds: job.selectedAdminAssetIds ?? [],
     templateGblPath: job.templateGblPath,
     exports: {
       lightburn: {
