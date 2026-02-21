@@ -56,6 +56,11 @@ cp .env.example .env
 The `.env` file should contain:
 ```env
 DATABASE_URL="postgresql://app:app@localhost:5432/customizer?schema=public"
+STUDIO_ENABLED="true"
+STUDIO_PASSWORD="dev-password"
+STUDIO_AI_URL="http://localhost:8010"
+OPENAI_API_KEY="your-openai-api-key"
+OPENAI_MODEL="gpt-4o-mini"
 ```
 
 4. **Set Up Database**

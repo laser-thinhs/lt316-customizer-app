@@ -51,3 +51,19 @@ def test_patch_does_not_modify_id_type() -> None:
     updated = body["next_layout"]["blocks"][1]
     assert original["id"] == updated["id"]
     assert original["type"] == updated["type"]
+
+
+def test_code_propose_returns_patch_payload() -> None:
+    response = client.post(
+        "/v1/code/propose",
+        json={
+            "instruction": "Add a note in studio docs",
+            "target": "src/studio",
+            "repo_context": {"tree_hint": ["src/studio"]},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "proposal_id" in body
+    assert "patch" in body
+    assert body["patch"].startswith("diff --git ")

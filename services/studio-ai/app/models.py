@@ -80,3 +80,19 @@ class ProposeResponse(BaseModel):
     json_patch: list[JsonPatchOp] | None = None
     summary: str
     warnings: list[str]
+
+
+class CodeProposeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instruction: str = Field(min_length=8, max_length=2000)
+    target: str | None = Field(default=None, max_length=200)
+    repo_context: dict[str, Any] | None = None
+
+
+class CodeProposeResponse(BaseModel):
+    proposal_id: str
+    patch: str
+    summary: str
+    warnings: list[str] = Field(default_factory=list)
+    files: list[str] = Field(default_factory=list)
