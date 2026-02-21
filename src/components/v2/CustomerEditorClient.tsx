@@ -31,6 +31,15 @@ function snapTo90(deg: number) {
   return Math.round(deg / 90) * 90;
 }
 
+function normalizeRotation(deg: number) {
+  const normalized = ((deg + 180) % 360 + 360) % 360 - 180;
+  return normalized === -180 ? 180 : normalized;
+}
+
+function snapTo45(deg: number) {
+  return Math.round(deg / 45) * 45;
+}
+
 function buildTemplateObject(style: YetiTemplateStyle) {
   const width = Math.round(Math.PI * style.diameter_mm);
   const height = style.height_mm;
