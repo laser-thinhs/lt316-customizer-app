@@ -2,89 +2,149 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { Canvas } from "@react-three/fiber";
-import { Bounds, OrbitControls, useGLTF } from "@react-three/drei";
-import { renderSvgToCanvas } from "@/lib/svg-artwork";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { ContactShadows, Environment, OrbitControls, useGLTF } from "@react-three/drei";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { loadSvgTextureFromPath } from "@/lib/rendering/svgTexture";
+import type { Placement } from "@/core/v2/types";
 
 type Props = {
   meshPath: string;
   overlaySvgPath?: string;
   className?: string;
+  colorHex?: string;
+  colorId?: string;
+  placement?: Placement;
+  wrapWidthMm?: number;
 };
 
 type PathState = "checking" | "ready" | "missing";
 
-function collectTargetMaterials(root: THREE.Object3D) {
-  const wrapMaterials = new Set<THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial | THREE.MeshBasicMaterial>();
-  const fallbackMaterials = new Set<THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial | THREE.MeshBasicMaterial>();
+type BodyFit = {
+  center: THREE.Vector3;
+  bodyRadius: number;
+  bodyHeight: number;
+};
 
-  root.traverse((node) => {
-    if (!(node instanceof THREE.Mesh)) return;
-    const nodeMaterials = Array.isArray(node.material) ? node.material : [node.material];
-    const hasNamedWrapMaterial = nodeMaterials.some((material) => material?.name === "WrapArea");
-    const isWrapNode = hasNamedWrapMaterial || node.name === "WrapArea";
+const defaultColorMap: Record<string, string> = {
+  black: "#18181b",
+  navy: "#1b2f53",
+  white: "#f8fafc",
+  gray: "#6b7280",
+  stainless: "#9ca3af"
+};
 
-    for (const material of nodeMaterials) {
-      if (
-        material instanceof THREE.MeshStandardMaterial ||
-        material instanceof THREE.MeshPhysicalMaterial ||
-        material instanceof THREE.MeshBasicMaterial
-      ) {
-        fallbackMaterials.add(material);
-        if (isWrapNode) wrapMaterials.add(material);
-      }
-    }
-  });
-
-  return wrapMaterials.size > 0 ? Array.from(wrapMaterials) : Array.from(fallbackMaterials);
+function resolveColor(colorId?: string, colorHex?: string): THREE.Color {
+  if (colorHex) return new THREE.Color(colorHex);
+  if (colorId && defaultColorMap[colorId]) return new THREE.Color(defaultColorMap[colorId]);
+  return new THREE.Color("#334155");
 }
 
-function MeshScene({ meshPath, overlaySvgPath }: { meshPath: string; overlaySvgPath?: string }) {
-  const { scene } = useGLTF(meshPath);
-  const cloned = useMemo(() => scene.clone(true), [scene]);
-  const previousTextureRef = useRef<THREE.CanvasTexture | null>(null);
+function fitBody(sceneObject: THREE.Object3D): BodyFit {
+  const box = new THREE.Box3().setFromObject(sceneObject);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+
+  return {
+    center,
+    bodyRadius: Math.max(size.x, size.z) * 0.28,
+    bodyHeight: Math.max(size.y * 0.42, 0.18)
+  };
+}
+
+function configureBodyMaterials(root: THREE.Object3D, color: THREE.Color) {
+  root.traverse((node) => {
+    if (!(node instanceof THREE.Mesh)) return;
+
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      if (!(material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshPhysicalMaterial)) continue;
+
+      const lowered = `${node.name} ${material.name}`.toLowerCase();
+      const isLid = lowered.includes("lid") || lowered.includes("cap");
+      const isBody = lowered.includes("body") || lowered.includes("shell") || lowered.includes("cup") || lowered.includes("wraparea");
+
+      if (isBody || !isLid) {
+        material.color = color.clone();
+        material.metalness = 0.42;
+        material.roughness = 0.34;
+      }
+
+      if (isLid) {
+        material.metalness = 0.18;
+        material.roughness = 0.6;
+      }
+
+      material.needsUpdate = true;
+    }
+
+    node.castShadow = true;
+    node.receiveShadow = true;
+  });
+}
+
+function SceneCamera({ focus, radius }: { focus: THREE.Vector3; radius: number }) {
+  const { camera } = useThree();
 
   useEffect(() => {
-    const materials = collectTargetMaterials(cloned);
-    if (materials.length === 0) return;
+    const distance = Math.max(radius * 3.4, 1.4);
+    camera.position.set(focus.x + distance * 0.95, focus.y + radius * 0.55, focus.z + distance * 0.78);
+    camera.lookAt(focus);
+    camera.updateProjectionMatrix();
+  }, [camera, focus, radius]);
+
+  return null;
+}
+
+function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wrapWidthMm }: Props) {
+  const { scene } = useGLTF(meshPath);
+  const controlsRef = useRef<OrbitControlsImpl | null>(null);
+  const labelRef = useRef<THREE.Mesh>(null);
+  const previousTextureRef = useRef<THREE.CanvasTexture | null>(null);
+
+  const cloned = useMemo(() => scene.clone(true), [scene]);
+  const bodyColor = useMemo(() => resolveColor(colorId, colorHex), [colorId, colorHex]);
+  const fit = useMemo(() => fitBody(cloned), [cloned]);
+
+  useEffect(() => {
+    configureBodyMaterials(cloned, bodyColor);
+  }, [cloned, bodyColor]);
+
+  useEffect(() => {
+    if (!overlaySvgPath || !labelRef.current) {
+      if (previousTextureRef.current) {
+        previousTextureRef.current.dispose();
+        previousTextureRef.current = null;
+      }
+      const labelMaterial = labelRef.current?.material;
+      if (labelMaterial instanceof THREE.MeshStandardMaterial) {
+        labelMaterial.map = null;
+        labelMaterial.needsUpdate = true;
+      }
+      return;
+    }
 
     let cancelled = false;
 
     const applyOverlay = async () => {
-      if (!overlaySvgPath) {
-        if (previousTextureRef.current) {
-          previousTextureRef.current.dispose();
-          previousTextureRef.current = null;
-        }
-        for (const material of materials) {
-          material.map = null;
-          material.needsUpdate = true;
-        }
-        return;
-      }
-
       try {
-        const response = await fetch(overlaySvgPath);
-        if (!response.ok) return;
-        const svgText = await response.text();
-        if (cancelled) return;
-
-        const textureCanvas = await renderSvgToCanvas(svgText, 2048);
-        if (cancelled) return;
-
-        const texture = new THREE.CanvasTexture(textureCanvas);
-        if ("colorSpace" in texture) {
-          texture.colorSpace = THREE.SRGBColorSpace;
+        const texture = await loadSvgTextureFromPath(overlaySvgPath);
+        if (cancelled || !labelRef.current) {
+          texture.dispose();
+          return;
         }
-        texture.flipY = false;
-        texture.needsUpdate = true;
 
         if (previousTextureRef.current) previousTextureRef.current.dispose();
         previousTextureRef.current = texture;
 
-        for (const material of materials) {
-          material.map = texture;
-          material.needsUpdate = true;
+        const labelMaterial = labelRef.current.material;
+        if (labelMaterial instanceof THREE.MeshStandardMaterial) {
+          labelMaterial.map = texture;
+          labelMaterial.transparent = true;
+          labelMaterial.alphaTest = 0.03;
+          labelMaterial.needsUpdate = true;
         }
       } catch {
       }
@@ -94,7 +154,24 @@ function MeshScene({ meshPath, overlaySvgPath }: { meshPath: string; overlaySvgP
     return () => {
       cancelled = true;
     };
-  }, [cloned, overlaySvgPath]);
+  }, [overlaySvgPath]);
+
+  useEffect(() => {
+    const texture = previousTextureRef.current;
+    if (!texture) return;
+
+    const seamShift = wrapWidthMm && wrapWidthMm > 0 ? (placement?.seamX_mm ?? 0) / wrapWidthMm : 0;
+    const rotationShift = (placement?.rotation_deg ?? 0) / 360;
+    const scale = Math.max(placement?.scale ?? 1, 0.15);
+
+    texture.repeat.set(1 / scale, 1);
+    texture.offset.set((seamShift + rotationShift) % 1, 0);
+    texture.needsUpdate = true;
+  }, [placement?.rotation_deg, placement?.scale, placement?.seamX_mm, wrapWidthMm]);
+
+  useFrame(() => {
+    controlsRef.current?.update();
+  });
 
   useEffect(() => {
     return () => {
@@ -104,18 +181,49 @@ function MeshScene({ meshPath, overlaySvgPath }: { meshPath: string; overlaySvgP
 
   return (
     <>
-      <ambientLight intensity={0.8} />
-      <directionalLight intensity={0.95} position={[3, 4, 4]} />
-      <directionalLight intensity={0.4} position={[-2, 1, -3]} />
-      <Bounds fit clip observe margin={1.15}>
-        <primitive object={cloned} />
-      </Bounds>
-      <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
+      <color attach="background" args={["#0f172a"]} />
+      <fog attach="fog" args={["#0f172a", 6, 16]} />
+
+      <Environment preset="studio" />
+      <hemisphereLight args={["#e2e8f0", "#1e293b", 0.45]} />
+      <directionalLight castShadow intensity={1.25} position={[3.2, 5.2, 4.6]} shadow-mapSize={[1024, 1024]} />
+      <directionalLight intensity={0.7} position={[-3.8, 2.3, -2.5]} />
+
+      <SceneCamera focus={fit.center} radius={Math.max(fit.bodyRadius, 0.35)} />
+
+      <primitive object={cloned} />
+
+      <mesh
+        ref={labelRef}
+        position={[fit.center.x, fit.center.y, fit.center.z]}
+        rotation={[0, Math.PI, 0]}
+      >
+        <cylinderGeometry args={[fit.bodyRadius * 1.014, fit.bodyRadius * 1.008, fit.bodyHeight, 96, 1, true]} />
+        <meshStandardMaterial color="#ffffff" metalness={0.08} roughness={0.58} transparent opacity={0.98} side={THREE.DoubleSide} />
+      </mesh>
+
+      <ContactShadows position={[fit.center.x, fit.center.y - fit.bodyHeight * 0.62, fit.center.z]} opacity={0.5} blur={2.8} scale={fit.bodyRadius * 5.5} far={2.2} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[fit.center.x, fit.center.y - fit.bodyHeight * 0.64, fit.center.z]}>
+        <planeGeometry args={[8, 8]} />
+        <meshStandardMaterial color="#111827" roughness={0.95} metalness={0} />
+      </mesh>
+
+      <OrbitControls
+        ref={controlsRef}
+        makeDefault
+        enableRotate
+        enablePan={false}
+        enableDamping
+        dampingFactor={0.07}
+        target={fit.center}
+        minDistance={Math.max(fit.bodyRadius * 2.1, 0.9)}
+        maxDistance={Math.max(fit.bodyRadius * 5.3, 3.4)}
+      />
     </>
   );
 }
 
-export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, className }: Props) {
+export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, className, colorHex, colorId, placement, wrapWidthMm }: Props) {
   const [pathState, setPathState] = useState<PathState>("checking");
 
   useEffect(() => {
@@ -148,16 +256,24 @@ export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, classN
 
   return (
     <div className={`h-full w-full ${className ?? ""}`.trim()}>
-      <Canvas dpr={[1, 2]} camera={{ fov: 38, near: 0.01, far: 1000, position: [0, 0, 3.5] }}>
-        <Suspense
-          fallback={
-            <mesh>
-              <boxGeometry args={[0.25, 0.25, 0.25]} />
-              <meshStandardMaterial color="#94a3b8" />
-            </mesh>
-          }
-        >
-          <MeshScene meshPath={meshPath} overlaySvgPath={overlaySvgPath} />
+      <Canvas
+        shadows
+        dpr={[1, 2]}
+        camera={{ fov: 32, near: 0.01, far: 1000 }}
+        gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, outputColorSpace: THREE.SRGBColorSpace }}
+        onCreated={({ gl }) => {
+          gl.toneMappingExposure = 1.2;
+        }}
+      >
+        <Suspense fallback={null}>
+          <MeshScene
+            meshPath={meshPath}
+            overlaySvgPath={overlaySvgPath}
+            colorHex={colorHex}
+            colorId={colorId}
+            placement={placement}
+            wrapWidthMm={wrapWidthMm}
+          />
         </Suspense>
       </Canvas>
     </div>

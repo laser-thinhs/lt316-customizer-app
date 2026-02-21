@@ -327,7 +327,15 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
                 <div className="mb-2 text-sm">3D Preview</div>
                 <div className="flex h-[380px] items-center justify-center rounded bg-slate-900 text-slate-200">
                   {job.templateMeshPath ? (
-                    <TemplateMeshPreview3D meshPath={job.templateMeshPath} overlaySvgPath={previewHref ?? undefined} className="h-full w-full" />
+                    <TemplateMeshPreview3D
+                      meshPath={job.templateMeshPath}
+                      overlaySvgPath={previewHref ?? undefined}
+                      colorId={selectedColor?.id ?? job.colorId}
+                      colorHex={selectedColor?.hex}
+                      placement={placement}
+                      wrapWidthMm={width}
+                      className="h-full w-full"
+                    />
                   ) : (
                     <div className="text-center text-sm">No mesh selected.</div>
                   )}
