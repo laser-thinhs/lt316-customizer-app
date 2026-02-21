@@ -8,8 +8,18 @@
       "diameter_mm": 73,
       "meshPath": "/models/yeti/rambler-20oz.glb",
       "colors": [
-        { "id": "stainless", "label": "Stainless Steel", "materialPath": "/templates/yeti/materials/stainless.json", "hex": "#b6bcc6" },
-        { "id": "navy", "label": "Navy", "materialPath": "/templates/yeti/materials/navy.json", "hex": "#1e3a8a" }
+        {
+          "id": "stainless",
+          "label": "Stainless Steel",
+          "materialPath": "/templates/yeti/materials/stainless.json",
+          "hex": "#b6bcc6"
+        },
+        {
+          "id": "navy",
+          "label": "Navy",
+          "materialPath": "/templates/yeti/materials/navy.json",
+          "hex": "#1e3a8a"
+        }
       ],
       "designs": [
         {
@@ -18,7 +28,14 @@
           "gblPath": "/templates/yeti/production/rambler-20oz/default.gbl",
           "previewSvgPath": "/templates/yeti/previews/rambler-20oz-default.svg"
         }
-      ]
+      ],
+      "uvTransform": {
+        "rotateDeg": 0,
+        "flipU": false,
+        "flipV": false,
+        "uOffset": 0,
+        "vOffset": 0
+      }
     },
     {
       "id": "rambler-30oz",
@@ -27,8 +44,18 @@
       "diameter_mm": 80,
       "meshPath": "/models/yeti/rambler-30oz.glb",
       "colors": [
-        { "id": "stainless", "label": "Stainless Steel", "materialPath": "/templates/yeti/materials/stainless.json", "hex": "#b6bcc6" },
-        { "id": "navy", "label": "Navy", "materialPath": "/templates/yeti/materials/navy.json", "hex": "#1e3a8a" }
+        {
+          "id": "stainless",
+          "label": "Stainless Steel",
+          "materialPath": "/templates/yeti/materials/stainless.json",
+          "hex": "#b6bcc6"
+        },
+        {
+          "id": "navy",
+          "label": "Navy",
+          "materialPath": "/templates/yeti/materials/navy.json",
+          "hex": "#1e3a8a"
+        }
       ],
       "designs": [
         {
@@ -37,7 +64,14 @@
           "gblPath": "/templates/yeti/production/rambler-30oz/default.gbl",
           "previewSvgPath": "/templates/yeti/previews/rambler-30oz-default.svg"
         }
-      ]
+      ],
+      "uvTransform": {
+        "rotateDeg": 0,
+        "flipU": false,
+        "flipV": false,
+        "uOffset": 0,
+        "vOffset": 0
+      }
     }
   ]
 }
