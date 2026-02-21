@@ -2,12 +2,20 @@ import { ZodError } from "zod";
 import { fail, ok } from "@/lib/response";
 import { requireApiRole } from "@/lib/api-auth";
 import { getDesignJobById, updateDesignJobPlacement } from "@/services/design-job.service";
+import { getV2Job, isV2JobId, updateV2Job } from "@/lib/v2/jobs-store";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_: Request, { params }: Params) {
   try {
     const { id } = await params;
+    if (isV2JobId(id)) {
+      const v2 = await getV2Job(id);
+      if (!v2) {
+        return Response.json({ error: { code: "NOT_FOUND", message: "Design job not found" } }, { status: 404 });
+      }
+      return ok(v2);
+    }
     const data = await getDesignJobById(id);
     return ok(data);
   } catch (error) {
@@ -17,9 +25,29 @@ export async function GET(_: Request, { params }: Params) {
 
 export async function PATCH(request: Request, { params }: Params) {
   try {
-    requireApiRole(request, ["admin", "operator"]);
     const { id } = await params;
     const body = await request.json();
+
+    if (isV2JobId(id)) {
+      const updated = await updateV2Job(id, {
+        objectDefinitionId: body.objectDefinitionId,
+        placement: body.placement,
+        customerName: body.customerName,
+        customerEmail: body.customerEmail,
+        productTemplateId: body.productTemplateId,
+        colorId: body.colorId,
+        templateDesignId: body.templateDesignId,
+        templateGblPath: body.templateGblPath,
+        templatePreviewSvgPath: body.templatePreviewSvgPath,
+        templateMeshPath: body.templateMeshPath
+      });
+      if (!updated) {
+        return Response.json({ error: { code: "NOT_FOUND", message: "Design job not found" } }, { status: 404 });
+      }
+      return ok(updated);
+    }
+
+    requireApiRole(request, ["admin", "operator"]);
     const data = await updateDesignJobPlacement(id, body);
     return ok(data);
   } catch (error) {

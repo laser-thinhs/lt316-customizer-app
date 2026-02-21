@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/errors";
+import { validateAuthConfig } from "@/lib/api-auth";
 
 let startupChecksRan = false;
+let startupSkipLogged = false;
 
 export function assertDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -35,13 +37,19 @@ export async function runStartupChecks() {
   try {
     assertDatabaseUrl();
     await assertDatabaseConnectivity();
+    validateAuthConfig();
     startupChecksRan = true;
   } catch (error) {
     const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
     const skipCheck = process.env.SKIP_STARTUP_DB_CHECK === "1";
+    const isNonProduction = process.env.NODE_ENV !== "production";
 
-    if (isBuildPhase || skipCheck) {
-      console.warn("Startup database check skipped during build/override:", error);
+    if (isBuildPhase || skipCheck || isNonProduction) {
+      if (!startupSkipLogged) {
+        const reason = error instanceof Error ? error.message : "unknown error";
+        console.warn(`Startup checks skipped in non-production: ${reason}`);
+        startupSkipLogged = true;
+      }
       startupChecksRan = true;
       return;
     }

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { AppError } from "@/lib/errors";
 import { createBatchSchema } from "@/schemas/batch";
 import { parseCsv, toErrorCsv } from "@/lib/csv";
@@ -111,7 +112,7 @@ export async function createBatchRun(rawInput: unknown) {
         productProfileId: input.productProfileId,
         machineProfileId: "fiber-galvo-300-lens-default",
         status: "draft",
-        placementJson: policyResult.document,
+        placementJson: policyResult.document as Prisma.InputJsonValue,
         proofImagePath: rendered.imagePath,
         placementHash: fingerprint(policyResult.document),
         templateId: template.id,

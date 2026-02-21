@@ -18,6 +18,8 @@ build/
 coverage/
 playwright-report/
 test-results/
+*.pyc
+__pycache__/
 
 # OS / IDE
 .DS_Store
@@ -37,3 +39,7 @@ storage/
 
 .vercel
 .env*.local
+
+# Runtime generated artifacts
+/data/
+/public/uploads/v2/

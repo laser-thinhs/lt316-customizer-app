@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { AppError } from "@/lib/errors";
 import { fingerprint } from "@/lib/canonical";
 import { applyTemplateSchema, createTemplateSchema, patchTemplateSchema } from "@/schemas/template";
@@ -100,7 +101,7 @@ export async function applyTemplate(id: string, rawInput: unknown) {
   const job = await prisma.designJob.update({
     where: { id: input.designJobId },
     data: {
-      placementJson: placementDocument,
+      placementJson: placementDocument as Prisma.InputJsonValue,
       templateId: id,
       placementHash: fingerprint(placementDocument)
     }

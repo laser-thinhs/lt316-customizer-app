@@ -12,10 +12,8 @@ function getLayoutPath(slug: string) {
 }
 
 export async function readLayout(slug: string): Promise<{ layout: PageLayout; error?: string }> {
-  const filePath = getLayoutPath(slug);
-
   try {
-    const file = await fs.readFile(filePath, "utf8");
+    const file = await fs.readFile(getLayoutPath(slug), "utf8");
     return parseLayoutFromUnknown(JSON.parse(file), slug);
   } catch (error: unknown) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -32,7 +30,7 @@ export async function readLayout(slug: string): Promise<{ layout: PageLayout; er
 export async function writeLayout(slug: string, input: unknown): Promise<{ layout?: PageLayout; error?: string }> {
   const parsed = pageLayoutSchema.safeParse(input);
   if (!parsed.success) {
-    return { error: "Validation error" };
+    return { error: parsed.error.issues.map((issue) => `${issue.path.join(".") || "layout"}: ${issue.message}`).join("; ") };
   }
 
   const sanitized = sanitizeLayout({ ...parsed.data, slug });

@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
+
 import Image from "next/image";
 import { usePlacementStore, selectPlacementDerived } from "@/store/placementStore";
 import type { PlacementInput } from "@/schemas/placement";
 import { circumferenceMm } from "@/lib/geometry/cylinder";
+import CanvasRenderer from "./CanvasRenderer";
+import { sanitizePlacement, type ArtworkPlacement } from "./artworkTexture";
 
-const TumblerPreview3D = dynamic(() => import("./TumblerPreview3D"), { ssr: false });
+import TumblerPreview3D from "./TumblerPreview3D";
+
 
 type AssetRef = {
   id: string;
@@ -59,11 +62,11 @@ function toLegacyPlacement(input: PlacementInput): {
   };
 }
 
-function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+function NumberField({ fieldId, label, value, onChange }: { fieldId: string; label: string; value: number; onChange: (value: number) => void }) {
   return (
     <label className="space-y-1 text-sm">
       <span>{label}</span>
-      <input type="number" step="0.1" className="w-full rounded border px-2 py-1" value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <input id={fieldId} name={fieldId} type="number" step="0.1" className="w-full rounded border px-2 py-1" value={value} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   );
 }
@@ -108,6 +111,15 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
   const [sortBy, setSortBy] = useState<"recent" | "oldest" | "name">("recent");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [artworkError, setArtworkError] = useState<string | null>(null);
+  const [textureReloadKey, setTextureReloadKey] = useState(0);
+  const [artworkPlacement, setArtworkPlacement] = useState<ArtworkPlacement>(() => sanitizePlacement({
+    scale: 1,
+    rotationDeg: 0,
+    offsetX: 0.5,
+    offsetY: 0.5,
+    fitMode: "manual"
+  }));
 
   const autosaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -172,8 +184,8 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
   };
 
   const validateFile = (file: File) => {
-    const allowed = new Set(["image/png", "image/jpeg", "image/webp"]);
-    if (!allowed.has(file.type)) return "Please upload png, jpg, jpeg, or webp images.";
+    const allowed = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
+    if (!allowed.has(file.type)) return "Please upload SVG, PNG, JPG, JPEG, or WEBP images.";
     if (file.size > 10 * 1024 * 1024) return "File is larger than 10MB. Please use a smaller image.";
     return null;
   };
@@ -274,14 +286,14 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
           }}
         >
           <p className="text-sm text-slate-700">Drag and drop artwork images here</p>
-          <p className="mt-1 text-xs text-slate-500">PNG / JPG / JPEG / WEBP, up to 10MB each.</p>
+          <p className="mt-1 text-xs text-slate-500">SVG / PNG / JPG / JPEG / WEBP, up to 10MB each.</p>
           <button className="mt-3 rounded bg-slate-900 px-3 py-1 text-xs text-white" onClick={() => fileInputRef.current?.click()}>Upload</button>
           <input
             ref={fileInputRef}
             type="file"
             className="hidden"
             multiple
-            accept=".png,.jpg,.jpeg,.webp"
+            accept=".svg,.png,.jpg,.jpeg,.webp"
             onChange={(e) => e.target.files && void uploadFiles(e.target.files)}
           />
           {uploadProgress !== null ? (
@@ -295,18 +307,16 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
           <div>
             <div className="mb-2 flex items-center gap-2">
               <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search filename"
+                id="search-assets" name="search-assets" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search filename"
                 className="w-full rounded border px-2 py-1 text-xs"
               />
-              <select className="rounded border px-2 py-1 text-xs" value={sortBy} onChange={(e) => setSortBy(e.target.value as "recent" | "oldest" | "name")}>
+              <select id="sort-by" name="sort-by" className="rounded border px-2 py-1 text-xs" value={sortBy} onChange={(e) => setSortBy(e.target.value as "recent" | "oldest" | "name")}>
                 <option value="recent">Recent uploads</option>
                 <option value="oldest">Oldest</option>
                 <option value="name">Name</option>
               </select>
             </div>
-            <label className="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={imagesOnly} onChange={() => setImagesOnly((v) => !v)} /> Images only</label>
+            <label className="mb-2 flex items-center gap-2 text-xs"><input id="images-only" name="images-only" type="checkbox" checked={imagesOnly} onChange={() => setImagesOnly((v) => !v)} /> Images only</label>
             <div className="grid max-h-72 grid-cols-2 gap-2 overflow-auto pr-1">
               {filteredAssets.map((asset) => (
                 <article key={asset.id} className="rounded border p-2 text-xs">
@@ -365,11 +375,11 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
 
         <h2 className="font-semibold">Controls</h2>
         <div className="grid grid-cols-2 gap-2">
-          <NumberField label="Width (mm)" value={store.placement.widthMm} onChange={(value) => store.patchPlacement({ widthMm: value })} />
-          <NumberField label="Height (mm)" value={store.placement.heightMm} onChange={(value) => store.patchPlacement({ heightMm: value })} />
-          <NumberField label="Offset X (mm)" value={store.placement.offsetXMm} onChange={(value) => store.patchPlacement({ offsetXMm: value })} />
-          <NumberField label="Offset Y (mm)" value={store.placement.offsetYMm} onChange={(value) => store.patchPlacement({ offsetYMm: value })} />
-          <NumberField label="Rotation (deg)" value={store.placement.rotationDeg} onChange={(value) => store.patchPlacement({ rotationDeg: value })} />
+          <NumberField fieldId="width-mm" label="Width (mm)" value={store.placement.widthMm} onChange={(value) => store.patchPlacement({ widthMm: value })} />
+          <NumberField fieldId="height-mm" label="Height (mm)" value={store.placement.heightMm} onChange={(value) => store.patchPlacement({ heightMm: value })} />
+          <NumberField fieldId="offset-x-mm" label="Offset X (mm)" value={store.placement.offsetXMm} onChange={(value) => store.patchPlacement({ offsetXMm: value })} />
+          <NumberField fieldId="offset-y-mm" label="Offset Y (mm)" value={store.placement.offsetYMm} onChange={(value) => store.patchPlacement({ offsetYMm: value })} />
+          <NumberField fieldId="rotation-deg" label="Rotation (deg)" value={store.placement.rotationDeg} onChange={(value) => store.patchPlacement({ rotationDeg: value })} />
         </div>
         <select
           value={store.placement.anchor}
@@ -384,9 +394,9 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
             <option key={anchor} value={anchor}>{anchor}</option>
           ))}
         </select>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={store.lockAspectRatio} onChange={store.toggleAspectLock} /> Lock aspect</label>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={store.snapToGrid} onChange={store.toggleSnapToGrid} /> Snap 1mm</label>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={clampEnabled} onChange={() => setClampEnabled((v) => !v)} /> Hard clamp preview</label>
+        <label className="flex items-center gap-2 text-sm"><input id="lock-aspect" name="lock-aspect" type="checkbox" checked={store.lockAspectRatio} onChange={store.toggleAspectLock} /> Lock aspect</label>
+        <label className="flex items-center gap-2 text-sm"><input id="snap-grid" name="snap-grid" type="checkbox" checked={store.snapToGrid} onChange={store.toggleSnapToGrid} /> Snap 1mm</label>
+        <label className="flex items-center gap-2 text-sm"><input id="clamp-enabled" name="clamp-enabled" type="checkbox" checked={clampEnabled} onChange={() => setClampEnabled((v) => !v)} /> Hard clamp preview</label>
         <div className="rounded bg-amber-50 p-2 text-xs text-amber-800">{warnings.length ? warnings.join(" ") : "No warnings."}</div>
         <div className="flex gap-2">
           <button onClick={() => store.undo()} className="rounded border px-2 py-1 text-xs">Undo</button>
@@ -395,34 +405,29 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
         </div>
       </section>
 
-      <section className="rounded border bg-white p-3">
+            <section className="rounded border bg-white p-3">
         <h2 className="mb-2 font-semibold">2D Unwrapped Canvas</h2>
-        <div className="relative overflow-auto rounded border bg-slate-50" style={{ width: "100%", minHeight: 420 }}>
-          <div
-            className="relative border border-slate-300"
-            style={{ width: derived.zone.widthMm * mmScale, height: derived.zone.heightMm * mmScale, backgroundSize: `${mmScale * 10}px ${mmScale * 10}px`, backgroundImage: "linear-gradient(to right,#e2e8f0 1px,transparent 1px),linear-gradient(to bottom,#e2e8f0 1px,transparent 1px)" }}
-            onPointerMove={(e) => {
-              if ((e.buttons & 1) === 0) return;
-              const target = e.currentTarget.getBoundingClientRect();
-              const x = (e.clientX - target.left) / mmScale;
-              const y = (e.clientY - target.top) / mmScale;
-              store.patchPlacement({ offsetXMm: x, offsetYMm: y });
-            }}
-          >
-            <div className="absolute left-0 top-0 h-full w-0.5 bg-red-500" />
-            <div
-              className="absolute border-2 border-blue-600/80 bg-blue-300/20"
-              style={{
-                left: rect.xMm * mmScale,
-                top: rect.yMm * mmScale,
-                width: rect.widthMm * mmScale,
-                height: rect.heightMm * mmScale,
-                transform: `rotate(${store.placement.rotationDeg}deg)`,
-                transformOrigin: "center"
-              }}
-            />
-          </div>
-        </div>
+        <CanvasRenderer
+          canvasSize={{ widthMm: derived.zone.widthMm, heightMm: derived.zone.heightMm }}
+          assets={activeAsset ? [{
+            id: activeAsset.id,
+            type: activeAsset.mime?.includes('svg') ? 'svg' : 'image',
+            url: activeAsset.url,
+            xMm: store.placement.offsetXMm,
+            yMm: store.placement.offsetYMm,
+            widthMm: store.placement.widthMm,
+            heightMm: store.placement.heightMm,
+            rotationDeg: store.placement.rotationDeg,
+            opacity: 1
+          }] : []}
+          selectedAssetId={activeAsset?.id}
+          mmScale={3}
+          gridEnabled={true}
+          gridSpacingMm={5}
+          showCenterlines={true}
+          onAssetMove={(id, x, y) => store.patchPlacement({ offsetXMm: x, offsetYMm: y })}
+          onAssetResize={(id, w, h) => store.patchPlacement({ widthMm: w, heightMm: h })}
+        />
       </section>
 
       <section className="rounded border bg-white p-3">
@@ -430,12 +435,44 @@ export default function EditorClient({ jobId, initialPlacement, profile, assets:
         <TumblerPreview3D
           diameterMm={profile.diameterMm}
           heightMm={profile.engraveZoneHeightMm}
+          designParams={activeAsset ? {
+            canvasWidth: derived.zone.widthMm,
+            canvasHeight: derived.zone.heightMm,
+            assetUrl: activeAsset.url,
+            assetType: activeAsset.mime?.includes('svg') ? 'svg' : 'image',
+            xMm: store.placement.offsetXMm,
+            yMm: store.placement.offsetYMm,
+            widthMm: store.placement.widthMm,
+            heightMm: store.placement.heightMm,
+            rotationDeg: store.placement.rotationDeg,
+            opacity: 1,
+            mmScale: 3
+          } : null}
           rotationDeg={store.placement.rotationDeg}
-          onRotationDegChange={(value) => store.patchPlacement({ rotationDeg: value })}
           offsetYMm={store.placement.offsetYMm}
           engraveZoneHeightMm={profile.engraveZoneHeightMm}
+          onTextureErrorChange={setArtworkError}
         />
         <p className="mt-2 text-xs text-slate-600">Asset: {activeAsset?.id ?? "none"}</p>
+        <div className="mt-3 space-y-2 rounded border bg-slate-50 p-2 text-xs">
+          <p className="font-semibold">Artwork placement</p>
+          <label className="block">Scale ({artworkPlacement.scale.toFixed(2)})
+            <input type="range" min={0.1} max={5} step={0.05} value={artworkPlacement.scale} onChange={(e) => setArtworkPlacement((prev) => sanitizePlacement({ ...prev, scale: Number(e.target.value), fitMode: "manual" }))} className="w-full" />
+          </label>
+          <label className="block">Rotation ({artworkPlacement.rotationDeg.toFixed(0)}°)
+            <input type="range" min={-180} max={180} step={1} value={artworkPlacement.rotationDeg} onChange={(e) => setArtworkPlacement((prev) => sanitizePlacement({ ...prev, rotationDeg: Number(e.target.value) }))} className="w-full" />
+          </label>
+          <label className="block">Horizontal offset ({artworkPlacement.offsetX.toFixed(2)})
+            <input type="range" min={0} max={1} step={0.01} value={artworkPlacement.offsetX} onChange={(e) => setArtworkPlacement((prev) => sanitizePlacement({ ...prev, offsetX: Number(e.target.value) }))} className="w-full" />
+          </label>
+          <label className="block">Vertical offset ({artworkPlacement.offsetY.toFixed(2)})
+            <input type="range" min={0} max={1} step={0.01} value={artworkPlacement.offsetY} onChange={(e) => setArtworkPlacement((prev) => sanitizePlacement({ ...prev, offsetY: Number(e.target.value) }))} className="w-full" />
+          </label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={artworkPlacement.fitMode === "contain"} onChange={(e) => setArtworkPlacement((prev) => sanitizePlacement({ ...prev, fitMode: e.target.checked ? "contain" : "manual" }))} /> Fit to cylinder width</label>
+          <button type="button" className="rounded border px-2 py-1" onClick={() => setArtworkPlacement(sanitizePlacement({ scale: 1, rotationDeg: 0, offsetX: 0.5, offsetY: 0.5, fitMode: "manual" }))}>Reset placement</button>
+          {!activeAsset ? <p className="text-amber-700">Upload artwork to apply texture.</p> : null}
+          {artworkError ? <p className="text-red-600">{artworkError} <button type="button" className="underline" onClick={() => setTextureReloadKey((current) => current + 1)}>Retry</button></p> : null}
+        </div>
       </section>
 
       <div className="pointer-events-none fixed right-3 top-3 z-50 space-y-2">

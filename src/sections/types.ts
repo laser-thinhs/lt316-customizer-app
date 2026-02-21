@@ -1,21 +1,23 @@
+import React from "react";
 import { z } from "zod";
 import { SectionType } from "@/lib/page-layout/types";
 
 export type SettingsFieldDefinition = {
   key: string;
   label: string;
-  kind: "text" | "textarea" | "url" | "number" | "checkbox";
+  kind: "text" | "textarea" | "url" | "number" | "checkbox" | "select";
   placeholder?: string;
   min?: number;
   max?: number;
   step?: number;
+  options?: Array<{ label: string; value: string }>;
 };
 
 export type SectionDefinition<TSettings> = {
   type: SectionType;
   label: string;
   defaultSettings: TSettings;
-  settingsSchema: z.ZodType<TSettings>;
+  settingsSchema: z.ZodType<TSettings, z.ZodTypeDef, unknown>;
   fields: SettingsFieldDefinition[];
-  render: (settings: TSettings) => JSX.Element;
+  render(settings: TSettings): React.ReactNode;
 };

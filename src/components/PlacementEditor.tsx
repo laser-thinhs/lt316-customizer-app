@@ -1,6 +1,7 @@
 ﻿"use client";
 
-import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { CSSProperties, ChangeEvent, DragEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   ImagePlacementObject,
   PlacementDocument,
@@ -14,12 +15,15 @@ import type { JobAssetExportResponse, PreflightResult } from "@/schemas/prefligh
 import { buildDefaultImagePlacement } from "@/lib/placement/image-insertion";
 import { useAutosavePlacement } from "@/hooks/useAutosavePlacement";
 import { arePlacementsEqual } from "@/lib/placement/stableCompare";
+import { CanonicalSvgArtwork, canonicalizeSvgArtwork } from "@/lib/svg-artwork";
 import InspectorPanel from "@/components/editor/InspectorPanel";
 import WrapCanvas, { WrapCanvasObject } from "@/components/editor/WrapCanvas";
 
 type Props = {
   designJobId: string;
   placement: PlacementDocument;
+  modelImageUrl?: string;
+  modelMaskUrl?: string;
   onUpdated: (placement: PlacementDocument) => void;
 };
 
@@ -39,10 +43,18 @@ type ApiAsset = {
 
 const curatedFonts = ["Inter", "Roboto Mono"];
 
+const GlbPreview = dynamic(() => import("@/components/editor/GlbPreview"), {
+  ssr: false
+});
+
 type TransformField = "xMm" | "yMm" | "widthMm" | "heightMm" | "rotationDeg";
 type TransformValues = Record<TransformField, string>;
+type PreviewMode = "2d" | "3d";
+type ActiveArtworkSvg = CanonicalSvgArtwork & { assetId: string };
 
 const defaultTransformValues: TransformValues = { xMm: "", yMm: "", widthMm: "", heightMm: "", rotationDeg: "" };
+const defaultModelImageUrl = "/models/tumbler-preview.svg";
+const svgOnlyMessage = "SVG-only for now; raster support coming next.";
 
 function randomId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -60,7 +72,7 @@ function isImageObject(object: PlacementObject | null): object is ImagePlacement
 function createTextObject(kind: TextObject["kind"]): TextObject {
   const base = {
     id: `text-${randomId()}`,
-    content: "Sample text",
+    content: "Edit text here...",
     fontFamily: curatedFonts[0],
     fontWeight: 400,
     fontStyle: "normal" as const,
@@ -104,6 +116,18 @@ function createTextObject(kind: TextObject["kind"]): TextObject {
 }
 
 const roundToHundredth = (value: number) => Math.round(value * 100) / 100;
+const FIXED_CANVAS_MM = 300;
+
+function withFixedCanvasSize(document: PlacementDocument): PlacementDocument {
+  return {
+    ...document,
+    canvas: {
+      ...document.canvas,
+      widthMm: FIXED_CANVAS_MM,
+      heightMm: FIXED_CANVAS_MM
+    }
+  };
+}
 
 function normalizeObjectOrder(objects: PlacementObject[]): PlacementObject[] {
   return objects.map((object, index) => ({ ...object, zIndex: index }));
@@ -119,11 +143,12 @@ function defaultLayerName(object: PlacementObject, index: number) {
   return object.layerName ?? `${object.kind.replace("_", " ")} ${index + 1}`;
 }
 
-export default function PlacementEditor({ designJobId, placement, onUpdated }: Props) {
-  const [doc, setDoc] = useState<PlacementDocument>(placementDocumentSchema.parse(placement));
+export default function PlacementEditor({ designJobId, placement, modelImageUrl, modelMaskUrl, onUpdated }: Props) {
+  const initialDoc = withFixedCanvasSize(placementDocumentSchema.parse(placement));
+  const [doc, setDoc] = useState<PlacementDocument>(initialDoc);
   const [assets, setAssets] = useState<ApiAsset[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [serverDoc, setServerDoc] = useState<PlacementDocument>(placementDocumentSchema.parse(placement));
+  const [serverDoc, setServerDoc] = useState<PlacementDocument>(initialDoc);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(doc.objects[0]?.id ?? null);
   const [undoStack, setUndoStack] = useState<PlacementDocument[]>([]);
   const [redoStack, setRedoStack] = useState<PlacementDocument[]>([]);
@@ -145,6 +170,50 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const [showCenterlines, setShowCenterlines] = useState(true);
   const [showSafeMargin, setShowSafeMargin] = useState(true);
   const [keepAspectResize, setKeepAspectResize] = useState(true);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("2d");
+  const [textureSizePx, setTextureSizePx] = useState<1024 | 2048>(2048);
+  const canvasPreviewScale = 0.25;
+  const canvasPreviewDpi = Math.max(1, canvasDpi * canvasPreviewScale);
+  const previewModelAssetKey = "default-v1";
+  const [activeArtworkSvg, setActiveArtworkSvg] = useState<ActiveArtworkSvg | null>(null);
+  const [isArtworkDragging, setArtworkDragging] = useState(false);
+  const [isUploadingArtwork, setUploadingArtwork] = useState(false);
+  const [selectedArtworkFile, setSelectedArtworkFile] = useState<{ name: string; size: number } | null>(null);
+  const [artworkUploadError, setArtworkUploadError] = useState<string | null>(null);
+  const artworkInputRef = useRef<HTMLInputElement>(null);
+  const textContentInputRef = useRef<HTMLTextAreaElement>(null);
+  const shouldFocusTextInputRef = useRef(false);
+  const resolvedModelImageUrl = modelImageUrl && modelImageUrl.trim().length > 0 ? modelImageUrl : defaultModelImageUrl;
+  const resolvedModelMaskUrl = modelMaskUrl && modelMaskUrl.trim().length > 0 ? modelMaskUrl : null;
+  const previewOverlayStyle: CSSProperties | undefined = resolvedModelMaskUrl ? {
+    WebkitMaskImage: `url(${resolvedModelMaskUrl})`,
+    maskImage: `url(${resolvedModelMaskUrl})`,
+    WebkitMaskRepeat: "no-repeat",
+    maskRepeat: "no-repeat",
+    WebkitMaskPosition: "center",
+    maskPosition: "center",
+    WebkitMaskSize: "contain",
+    maskSize: "contain"
+  } : undefined;
+
+  const formatBytes = (bytes: number) => {
+    if (!Number.isFinite(bytes)) return "";
+    if (bytes < 1024) return `${bytes} B`;
+    const units = ["KB", "MB", "GB"];
+    let value = bytes / 1024;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  };
+
+  const formatAssetDate = (createdAt: string) => {
+    const parsed = new Date(createdAt);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toLocaleString();
+  };
 
   const copyText = async (value: string, label: string) => {
     try {
@@ -214,10 +283,53 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     });
   }, [doc.objects]);
 
+  const activePreviewImageObject = useMemo(() => {
+    if (isImageObject(selected)) return selected;
+    return doc.objects.find((entry): entry is ImagePlacementObject => entry.kind === "image") ?? null;
+  }, [doc.objects, selected]);
+
+  useEffect(() => {
+    const assetId = activePreviewImageObject?.assetId;
+    if (!assetId) {
+      setActiveArtworkSvg(null);
+      return;
+    }
+
+    const asset = assets.find((entry) => entry.id === assetId);
+    if (!asset || asset.mimeType !== "image/svg+xml") {
+      setActiveArtworkSvg(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSvgArtwork = async () => {
+      try {
+        const response = await fetch(`/api/assets/${assetId}`);
+        if (!response.ok) throw new Error("Failed to load SVG artwork.");
+        const svgText = await response.text();
+        const canonical = canonicalizeSvgArtwork(svgText);
+        if (cancelled) return;
+        setActiveArtworkSvg({ assetId, ...canonical });
+      } catch {
+        if (!cancelled) {
+          setActiveArtworkSvg(null);
+        }
+      }
+    };
+
+    void loadSvgArtwork();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePreviewImageObject?.assetId, assets]);
+
   const commitDoc = (next: PlacementDocument) => {
     setUndoStack((prev) => [...prev.slice(-29), doc]);
     setRedoStack([]);
-    setDoc({ ...next, objects: normalizeObjectOrder(next.objects) });
+    const normalized = withFixedCanvasSize(next);
+    setDoc({ ...normalized, objects: normalizeObjectOrder(normalized.objects) });
   };
 
   const refreshAssets = useCallback(async () => {
@@ -236,11 +348,12 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     void refreshAssets();
   }, [refreshAssets]);
 
-  const handleRecoveredPlacement = useCallback((localDraft: PlacementDocument) => setDoc(localDraft), []);
+  const handleRecoveredPlacement = useCallback((localDraft: PlacementDocument) => setDoc(withFixedCanvasSize(localDraft)), []);
   const handleSavedPlacement = useCallback((savedDoc: PlacementDocument) => {
-    if (!arePlacementsEqual(doc, savedDoc)) setDoc(savedDoc);
-    setServerDoc(savedDoc);
-    onUpdated(savedDoc);
+    const normalizedSavedDoc = withFixedCanvasSize(savedDoc);
+    if (!arePlacementsEqual(doc, normalizedSavedDoc)) setDoc(normalizedSavedDoc);
+    setServerDoc(normalizedSavedDoc);
+    onUpdated(normalizedSavedDoc);
   }, [doc, onUpdated]);
 
   const autosave = useAutosavePlacement({ designJobId, placement: doc, serverPlacement: serverDoc, onPlacementRecovered: handleRecoveredPlacement, onPlacementSaved: handleSavedPlacement });
@@ -253,8 +366,18 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
       zIndex: doc.objects.length
     }, doc.canvas);
     commitDoc({ ...doc, objects: [...doc.objects, clamped] });
+    shouldFocusTextInputRef.current = true;
     setSelectedObjectId(clamped.id);
   };
+
+  useEffect(() => {
+    if (!shouldFocusTextInputRef.current) return;
+    if (!isTextObject(selected)) return;
+    if (!textContentInputRef.current) return;
+    textContentInputRef.current.focus();
+    textContentInputRef.current.select();
+    shouldFocusTextInputRef.current = false;
+  }, [selected]);
 
   const updateSelectedText = (updater: (object: TextObject) => TextObject) => {
     if (!isTextObject(selected) || selected.locked) return;
@@ -403,9 +526,17 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
     });
   };
 
-  const onUploadArtwork = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const uploadArtworkFile = async (file: File) => {
+    const isSvg = file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
+    if (!isSvg) {
+      setArtworkUploadError(svgOnlyMessage);
+      setStatusMessage(svgOnlyMessage);
+      return;
+    }
+
+    setArtworkUploadError(null);
+    setSelectedArtworkFile({ name: file.name, size: file.size });
+    setUploadingArtwork(true);
     try {
       const form = new FormData();
       form.append("designJobId", designJobId);
@@ -414,15 +545,57 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message || "Upload failed");
       setStatusMessage(`Uploaded ${json.data.originalName ?? file.name}`);
+      setSelectedArtworkFile(null);
       await refreshAssets();
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Upload failed");
+      const message = error instanceof Error ? error.message : "Upload failed";
+      setArtworkUploadError(message);
+      setStatusMessage(message);
+    }
+  };
+
+  const onUploadArtwork = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await uploadArtworkFile(file);
     } finally {
+      setUploadingArtwork(false);
       event.target.value = "";
     }
   };
 
+  const onArtworkDrop = async (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setArtworkDragging(false);
+    const file = event.dataTransfer.files?.[0];
+    if (!file) return;
+    try {
+      await uploadArtworkFile(file);
+    } finally {
+      setUploadingArtwork(false);
+    }
+  };
+
+  const onArtworkDropzoneKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    artworkInputRef.current?.click();
+  };
+
+  const clearSelectedArtworkFile = () => {
+    setSelectedArtworkFile(null);
+    setArtworkUploadError(null);
+    if (artworkInputRef.current) artworkInputRef.current.value = "";
+  };
+
   const onAddAssetToCanvas = (asset: ApiAsset) => {
+    if (asset.mimeType !== "image/svg+xml") {
+      setArtworkUploadError(svgOnlyMessage);
+      setStatusMessage(svgOnlyMessage);
+      return;
+    }
+
     try {
       const imageObj: ImagePlacementObject = {
         ...buildDefaultImagePlacement({
@@ -444,6 +617,91 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
       setStatusMessage(error instanceof Error ? error.message : "Could not add image");
     }
   };
+
+  const renderArtworkAssetsSection = () => (
+    <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold text-black">Artwork Assets</h3>
+        <p className="text-xs text-black">Upload your artwork for this job. Supported: SVG only.</p>
+      </div>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label="Upload artwork by choosing a file or dragging and dropping it here"
+        className={`space-y-3 rounded-lg border border-dashed p-4 transition ${isArtworkDragging ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-slate-50"} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400`}
+        onKeyDown={onArtworkDropzoneKeyDown}
+        onClick={() => artworkInputRef.current?.click()}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setArtworkDragging(true);
+        }}
+        onDragLeave={() => setArtworkDragging(false)}
+        onDrop={onArtworkDrop}
+      >
+        <div className="flex items-start gap-3">
+          <span aria-hidden className="mt-0.5 text-base">⇪</span>
+          <div className="space-y-1 text-xs text-black">
+            <p className="font-medium text-black">{selectedArtworkFile ? selectedArtworkFile.name : "No artwork uploaded yet."}</p>
+            <p className="text-black">{selectedArtworkFile ? `${formatBytes(selectedArtworkFile.size)} selected` : "Drag & drop a file here, or choose a file."}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+            onClick={(event) => {
+              event.stopPropagation();
+              artworkInputRef.current?.click();
+            }}
+          >
+            Choose file
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-black transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!selectedArtworkFile || isUploadingArtwork}
+            onClick={(event) => {
+              event.stopPropagation();
+              clearSelectedArtworkFile();
+            }}
+          >
+            Clear
+          </button>
+          <p className="text-xs text-black">Size limits apply.</p>
+        </div>
+        <input
+          ref={artworkInputRef}
+          type="file"
+          accept=".svg,image/svg+xml"
+          className="sr-only"
+          onChange={onUploadArtwork}
+        />
+      </div>
+      {isUploadingArtwork ? <p className="text-xs text-black">Uploading…</p> : null}
+      {artworkUploadError ? <p className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">{artworkUploadError}</p> : null}
+      <div className="max-h-52 space-y-2 overflow-auto pr-1">
+        {assets.map((asset) => {
+          const uploadedLabel = formatAssetDate(asset.createdAt);
+          return (
+            <div key={asset.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-sm">
+              <div>
+                <p className="font-medium text-black">{asset.originalName ?? asset.id}</p>
+                <p className="text-black">{asset.widthPx ?? "?"}×{asset.heightPx ?? "?"} px</p>
+                {uploadedLabel ? <p className="text-black">Uploaded {uploadedLabel}</p> : null}
+              </div>
+              <button className="rounded-md border border-slate-300 px-2 py-1 font-medium text-black transition hover:bg-slate-50" onClick={() => onAddAssetToCanvas(asset)}>Add to Canvas</button>
+            </div>
+          );
+        })}
+        {assets.length === 0 ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-black">
+            <p className="font-medium text-black">No artwork uploaded yet.</p>
+            <p className="mt-1">Drag & drop a file here, or choose a file.</p>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
 
   const patchLayer = (id: string, patch: Partial<PlacementObject>) => {
     commitDoc({
@@ -532,342 +790,357 @@ export default function PlacementEditor({ designJobId, placement, onUpdated }: P
   const exportBatch = async () => { setExporting(true); try { const jobIds = batchIds.split(",").map((e) => e.trim()).filter(Boolean); const res = await fetch("/api/design-jobs/export-batch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ designJobIds: jobIds }) }); const json = await res.json(); if (!res.ok) throw new Error(json?.error?.message || "Batch export failed"); setStatusMessage(`Batch exported ${json.data.count} jobs.`); } catch (error) { setStatusMessage(error instanceof Error ? error.message : "Unknown batch export error"); } finally { setExporting(false); } };
 
   return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="text-base font-semibold">Placement & Text Tools (mm)</h2>
-      <p className="min-h-5 text-xs text-slate-600" aria-live="polite">{autosave.statusMessage}</p>
-      <p className="text-xs text-slate-600">Source of truth is the unwrapped 2D document.</p>
-      {autosave.hasRecoveredDraft ? (
-        <div className="flex flex-wrap items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          <span>Recovered unsaved local edits.</span>
-          <button
-            className="rounded border border-amber-400 px-2 py-1 hover:bg-amber-100"
-            onClick={autosave.useLocalDraft}
-          >
-            Use Local Draft
-          </button>
-          <button
-            className="rounded border border-amber-400 px-2 py-1 hover:bg-amber-100"
-            onClick={autosave.useServerVersion}
-          >
-            Use Server Version
-          </button>
-        </div>
-      ) : null}
-      <div className="flex flex-wrap gap-2">
-        <button
-          className="rounded border px-2 py-1 text-sm hover:bg-slate-50"
-          onClick={() => addText("text_line")}
-        >
-          Add Text Line
-        </button>
-        <button
-          className="rounded border px-2 py-1 text-sm hover:bg-slate-50"
-          onClick={() => addText("text_block")}
-        >
-          Add Text Block
-        </button>
-        <button
-          className="rounded border px-2 py-1 text-sm hover:bg-slate-50"
-          onClick={() => addText("text_arc")}
-        >
-          Add Curved Text
-        </button>
-        <button
-          className="rounded border px-2 py-1 text-sm disabled:opacity-50 hover:bg-slate-50"
-          disabled={undoStack.length === 0}
-          onClick={handleUndo}
-        >
-          Undo
-        </button>
-        <button
-          className="rounded border px-2 py-1 text-sm disabled:opacity-50 hover:bg-slate-50"
-          disabled={redoStack.length === 0}
-          onClick={handleRedo}
-        >
-          Redo
-        </button>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          className="rounded border px-2 py-1 text-sm hover:bg-slate-50"
-          onClick={() => setAssetPickerOpen((open) => !open)}
-        >
-          Add Image from Assets
-        </button>
-        <button
-          className="rounded border px-2 py-1 text-sm disabled:opacity-50 hover:enabled:bg-slate-50"
-          disabled={!selected}
-          onClick={duplicateSelectedLayer}
-        >
-          Duplicate Layer
-        </button>
-        <button
-          className="rounded border px-2 py-1 text-sm disabled:opacity-50 hover:enabled:bg-slate-50"
-          disabled={!selected}
-          onClick={deleteSelectedLayer}
-        >
-          Delete Layer
-        </button>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-3">
-          <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
-            <h3 className="text-sm font-semibold">Artwork Assets</h3>
-            <label className="block text-sm"><span>Upload Artwork</span><input type="file" accept=".svg,.png,.jpg,.jpeg,.webp" className="mt-1 block w-full text-xs" onChange={onUploadArtwork} /></label>
-            <div className="max-h-44 space-y-2 overflow-auto">{assets.map((asset) => <div key={asset.id} className="flex items-center justify-between gap-2 rounded border bg-white p-2 text-xs"><div><p className="font-medium">{asset.originalName ?? asset.id}</p><p className="text-slate-600">{asset.widthPx ?? "?"}├ù{asset.heightPx ?? "?"} px</p></div><button className="rounded border px-2 py-1" onClick={() => onAddAssetToCanvas(asset)}>Add to Canvas</button></div>)}{assets.length === 0 ? <p className="text-xs text-slate-600">No artwork uploaded for this job yet.</p> : null}</div>
-          </section>
-
-          {isTextObject(selected) ? (
-            <section className="grid grid-cols-1 gap-2 rounded border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
-              <label className="text-sm sm:col-span-2">Content<textarea value={selected.content} onChange={(e) => updateSelectedText((obj) => ({ ...obj, content: e.target.value }))} className="w-full rounded border px-2 py-1" rows={3} /></label>
-              <label className="text-sm">Font<select value={selected.fontFamily} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontFamily: e.target.value }))} className="w-full rounded border px-2 py-1">{curatedFonts.map((font) => <option key={font}>{font}</option>)}</select></label>
-              <label className="text-sm">Font Size (mm)<input type="number" step="0.1" value={selected.fontSizeMm} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontSizeMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
-              <label className="text-sm">Letter Spacing (mm)<input type="number" step="0.1" value={selected.letterSpacingMm} onChange={(e) => updateSelectedText((obj) => ({ ...obj, letterSpacingMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
-              <label className="text-sm">Line Height<input type="number" step="0.1" value={selected.lineHeight} onChange={(e) => updateSelectedText((obj) => ({ ...obj, lineHeight: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
-              <div className="sm:col-span-2 flex flex-wrap items-center gap-2 text-sm"><label><input type="checkbox" checked={selected.fontWeight >= 700} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontWeight: e.target.checked ? 700 : 400 }))} /> Bold</label><label><input type="checkbox" checked={selected.fontStyle === "italic"} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontStyle: e.target.checked ? "italic" : "normal" }))} /> Italic</label><label><input type="checkbox" checked={selected.allCaps} onChange={(e) => updateSelectedText((obj) => ({ ...obj, allCaps: e.target.checked }))} /> All caps</label><label><input type="checkbox" checked={selected.mirrorX} onChange={(e) => updateSelectedText((obj) => ({ ...obj, mirrorX: e.target.checked }))} /> Mirror X</label><label><input type="checkbox" checked={selected.mirrorY} onChange={(e) => updateSelectedText((obj) => ({ ...obj, mirrorY: e.target.checked }))} /> Mirror Y</label></div>
-              {selected.kind === "text_arc" ? <><label className="text-sm">Arc Radius (mm)<input type="number" step="0.1" value={selected.arc.radiusMm} onChange={(e) => updateSelectedText((obj) => obj.kind === "text_arc" ? { ...obj, arc: { ...obj.arc, radiusMm: Number(e.target.value) } } : obj)} className="w-full rounded border px-2 py-1" /></label><label className="text-sm">Arc Start Angle (deg)<input type="number" step="0.1" value={selected.arc.startAngleDeg} onChange={(e) => updateSelectedText((obj) => obj.kind === "text_arc" ? { ...obj, arc: { ...obj.arc, startAngleDeg: Number(e.target.value) } } : obj)} className="w-full rounded border px-2 py-1" /></label></> : null}
-              <button onClick={onConvertToOutline} className="rounded bg-slate-900 px-3 py-2 text-sm text-white sm:col-span-2">Convert to Outline</button>
-            </section>
-          ) : null}
-
-          {selectedWarnings.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-xs text-amber-700">{selectedWarnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : null}
-
-          <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold">Export Pack</h3><span className={`rounded-full px-2 py-0.5 text-xs ${preflight?.status === "pass" ? "bg-emerald-100 text-emerald-700" : preflight?.status === "warn" ? "bg-amber-100 text-amber-700" : preflight?.status === "fail" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>{preflight?.status ?? "not-run"}</span></div>
-            <div className="flex flex-wrap gap-2"><button className="rounded border px-2 py-1 text-xs" onClick={() => void runPreflight()} disabled={isRunningPreflight}>{isRunningPreflight ? "Running..." : "Run Preflight"}</button><button className="rounded bg-slate-900 px-2 py-1 text-xs text-white" onClick={() => void exportJob()} disabled={isExporting}>{isExporting ? "Exporting..." : "Export Job"}</button></div>
-            <label className="block text-xs">Batch Job IDs (comma separated)<input value={batchIds} onChange={(event) => setBatchIds(event.target.value)} placeholder="job_a,job_b" className="mt-1 w-full rounded border px-2 py-1" /></label>
-            <button className="rounded border px-2 py-1 text-xs" onClick={() => void exportBatch()} disabled={isExporting}>Export Selected Jobs</button>
-            {(groupedIssues.error.length + groupedIssues.warning.length + groupedIssues.info.length) > 0 ? <div className="space-y-2 text-xs">{["error", "warning", "info"].map((severity) => <div key={severity}><p className="font-medium uppercase">{severity}</p><ul className="list-disc pl-4">{groupedIssues[severity as keyof typeof groupedIssues].map((issue) => <li key={`${issue.code}-${issue.objectId ?? issue.message}`}>{issue.message}{issue.objectId ? ` (${issue.objectId})` : ""}</li>)}</ul></div>)}</div> : null}
-          </section>
-          <pre className="max-h-72 overflow-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(doc ?? createDefaultPlacementDocument(), null, 2)}</pre>
-      <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
-        <h3 className="text-sm font-semibold">Layers</h3>
-        <div className="max-h-52 space-y-1 overflow-auto">
-          {doc.objects.map((entry, index) => (
-            <div
-              key={entry.id}
-              draggable
-              onDragStart={(event) => onLayerDragStart(event, entry.id)}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={() => onLayerDrop(entry.id)}
-              className={`grid grid-cols-[auto_1fr_auto_auto] items-center gap-2 rounded border bg-white px-2 py-1 text-xs ${selectedObjectId === entry.id ? "border-blue-500" : "border-slate-200"}`}
+    <section className="flex h-screen min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-black shadow-sm">
+      <div className="sticky top-0 z-20 shrink-0 space-y-3 border-b border-slate-200 bg-white p-4">
+        <h2 className="text-base font-semibold">Placement & Text Tools (mm)</h2>
+        <p className="min-h-5 text-xs text-black" aria-live="polite">{autosave.statusMessage}</p>
+        <p className="min-h-5 text-xs text-black">{statusMessage}</p>
+        <p className="text-xs text-black">Source of truth is the unwrapped 2D document.</p>
+        {autosave.hasRecoveredDraft ? (
+          <div className="flex flex-wrap items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-black">
+            <span>Recovered unsaved local edits.</span>
+            <button
+              className="rounded border border-amber-400 px-2 py-1 hover:bg-amber-100"
+              onClick={autosave.useLocalDraft}
             >
-              <button className="w-6" onClick={() => setSelectedObjectId(entry.id)}>{objectIcon(entry.kind)}</button>
-              <input
-                value={defaultLayerName(entry, index)}
-                onChange={(event) => patchLayer(entry.id, { layerName: event.target.value })}
-                onFocus={() => setSelectedObjectId(entry.id)}
-                className="rounded border px-1 py-0.5"
-              />
-              <button className="rounded border px-1" onClick={() => patchLayer(entry.id, { visible: !(entry.visible ?? true) })}>{entry.visible === false ? "≡ƒÖê" : "≡ƒæü"}</button>
-              <button className="rounded border px-1" onClick={() => patchLayer(entry.id, { locked: !(entry.locked ?? false) })}>{entry.locked ? "≡ƒöÆ" : "≡ƒöô"}</button>
-            </div>
-          ))}
-          {doc.objects.length === 0 ? <p className="text-xs text-slate-600">No layers yet.</p> : null}
-        </div>
-      </section>
-
-      {isAssetPickerOpen ? (
-        <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
-          <h3 className="text-sm font-semibold">Artwork Assets</h3>
-          <label className="block text-sm">
-            <span>Upload Artwork</span>
-            <input type="file" accept=".svg,.png,.jpg,.jpeg,.webp" className="mt-1 block w-full text-xs" onChange={onUploadArtwork} />
-          </label>
-          <div className="max-h-44 space-y-2 overflow-auto">
-            {assets.map((asset) => (
-              <div key={asset.id} className="flex items-center justify-between gap-2 rounded border bg-white p-2 text-xs">
-                <div>
-                  <p className="font-medium">{asset.originalName ?? asset.id}</p>
-                  <p className="text-slate-600">{asset.widthPx ?? "?"}├ù{asset.heightPx ?? "?"} px</p>
-                </div>
-                <button className="rounded border px-2 py-1" onClick={() => onAddAssetToCanvas(asset)}>Add to Canvas</button>
-              </div>
-            ))}
-            {assets.length === 0 ? <p className="text-xs text-slate-600">No artwork uploaded for this job yet.</p> : null}
-          </div>
-        </section>
-      ) : null}
-
-      <label className="block text-sm"><span>Selected Object</span><select value={selectedObjectId ?? ""} onChange={(event) => setSelectedObjectId(event.target.value || null)} className="w-full rounded border px-2 py-1"><option value="">None</option>{doc.objects.map((entry, index) => (<option key={entry.id} value={entry.id}>{defaultLayerName(entry, index)}</option>))}</select></label>
-
-      {isImageObject(selected) && selected.locked ? <p className="text-xs text-amber-700">Selected layer is locked.</p> : null}
-      {isTextObject(selected) && selected.locked ? <p className="text-xs text-amber-700">Selected layer is locked.</p> : null}
-
-      <section className="space-y-3 rounded border border-slate-200 bg-slate-50 p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold">Canvas Preview</h3>
-          <label className="text-xs">DPI
-            <input type="number" min={72} step={1} value={canvasDpi} onChange={(event) => setCanvasDpi(Math.max(72, Number(event.target.value) || 96))} className="ml-2 w-20 rounded border px-2 py-1" />
-          </label>
-        </div>
-        <div className="flex flex-wrap gap-3 text-xs">
-          <label className="flex items-center gap-1"><input type="checkbox" checked={gridEnabled} onChange={(event) => setGridEnabled(event.target.checked)} /> Grid</label>
-          <label className="flex items-center gap-1">Spacing
-            <select value={gridSpacingMm} onChange={(event) => setGridSpacingMm(Number(event.target.value) === 10 ? 10 : 5)} className="rounded border px-1 py-0.5">
-              <option value={5}>5mm</option>
-              <option value={10}>10mm</option>
-            </select>
-          </label>
-          <label className="flex items-center gap-1"><input type="checkbox" checked={showCenterlines} onChange={(event) => setShowCenterlines(event.target.checked)} /> Centerlines</label>
-          <label className="flex items-center gap-1"><input type="checkbox" checked={showSafeMargin} onChange={(event) => setShowSafeMargin(event.target.checked)} /> Safe margin</label>
-          <label className="flex items-center gap-1"><input type="checkbox" checked={keepAspectResize} onChange={(event) => setKeepAspectResize(event.target.checked)} /> Keep aspect resize</label>
-        </div>
-        <WrapCanvas
-          template={{ widthMm: doc.canvas.widthMm, heightMm: doc.canvas.heightMm, safeMarginMm: 2 }}
-          objects={canvasObjects}
-          selectedId={selectedObjectId}
-          dpi={canvasDpi}
-          gridEnabled={gridEnabled}
-          gridSpacingMm={gridSpacingMm}
-          showCenterlines={showCenterlines}
-          showSafeMargin={showSafeMargin}
-          keepAspectRatio={keepAspectResize}
-          onSelect={setSelectedObjectId}
-          onUpdateTransform={updateObjectTransform}
-        />
-        <p className="text-xs text-slate-600">Drag to move. Shift-drag locks axis. Arrow keys nudge 1mm (Shift = 5mm).</p>
-      </section>
-
-      {isImageObject(selected) ? (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <label className="text-sm">X (mm)<input type="number" step="0.01" value={selected.xMm} onChange={(e) => updateSelectedImage({ xMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
-          <label className="text-sm">Y (mm)<input type="number" step="0.01" value={selected.yMm} onChange={(e) => updateSelectedImage({ yMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
-          <label className="text-sm">Width (mm)<input type="number" min="0.01" step="0.01" value={selected.widthMm} onChange={(e) => updateSelectedImage({ widthMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
-          <label className="text-sm">Height (mm)<input type="number" min="0.01" step="0.01" value={selected.heightMm} onChange={(e) => updateSelectedImage({ heightMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
-          <label className="text-sm">Rotation (deg)<input type="number" step="0.01" value={selected.rotationDeg} onChange={(e) => updateSelectedImage({ rotationDeg: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
-          <label className="text-sm">Opacity<input type="number" min="0" max="1" step="0.01" value={selected.opacity} onChange={(e) => updateSelectedImage({ opacity: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
-        </div>
-      ) : null}
-
-      {isTextObject(selected) ? <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <label className="text-sm">Content<textarea value={selected.content} onChange={(event) => updateSelectedText((obj) => ({ ...obj, content: event.target.value }))} className="w-full rounded border px-2 py-1" /></label>
-          <label className="text-sm">Font<select value={selected.fontFamily} onChange={(event) => updateSelectedText((obj) => ({ ...obj, fontFamily: event.target.value }))} className="w-full rounded border px-2 py-1">{curatedFonts.map((font) => <option key={font} value={font}>{font}</option>)}</select></label>
-          <label className="text-sm">Font Size (mm)<input type="number" step="0.1" value={selected.fontSizeMm} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontSizeMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
-          <label className="text-sm">Letter Spacing (mm)<input type="number" step="0.1" value={selected.letterSpacingMm} onChange={(e) => updateSelectedText((obj) => ({ ...obj, letterSpacingMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
-          <label className="text-sm">Line Height<input type="number" step="0.1" value={selected.lineHeight} onChange={(e) => updateSelectedText((obj) => ({ ...obj, lineHeight: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
-          <label className="text-sm">Box Width (mm)<input type="number" step="0.1" value={selected.boxWidthMm} onChange={(e) => updateSelectedText((obj) => ({ ...obj, boxWidthMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
-          <div className="flex items-center gap-2 text-sm"><label><input type="checkbox" checked={selected.fontWeight >= 700} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontWeight: e.target.checked ? 700 : 400 }))} /> Bold</label><label><input type="checkbox" checked={selected.fontStyle === "italic"} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontStyle: e.target.checked ? "italic" : "normal" }))} /> Italic</label><label><input type="checkbox" checked={selected.allCaps} onChange={(e) => updateSelectedText((obj) => ({ ...obj, allCaps: e.target.checked }))} /> All caps</label><label><input type="checkbox" checked={selected.mirrorX} onChange={(e) => updateSelectedText((obj) => ({ ...obj, mirrorX: e.target.checked }))} /> Mirror X</label><label><input type="checkbox" checked={selected.mirrorY} onChange={(e) => updateSelectedText((obj) => ({ ...obj, mirrorY: e.target.checked }))} /> Mirror Y</label></div>
-          {selected.kind === "text_arc" && <><label className="text-sm">Arc Radius (mm)<input type="number" step="0.1" value={selected.arc.radiusMm} onChange={(e) => updateSelectedText((obj) => obj.kind === "text_arc" ? { ...obj, arc: { ...obj.arc, radiusMm: Number(e.target.value) } } : obj)} className="w-full rounded border px-2 py-1" /></label><label className="text-sm">Arc Start Angle<input type="number" step="0.1" value={selected.arc.startAngleDeg} onChange={(e) => updateSelectedText((obj) => obj.kind === "text_arc" ? { ...obj, arc: { ...obj.arc, startAngleDeg: Number(e.target.value) } } : obj)} className="w-full rounded border px-2 py-1" /></label></>}
-          <button onClick={onConvertToOutline} className="rounded bg-slate-900 px-3 py-2 text-sm text-white">Convert to Outline</button>
-        </div> : null}
-      {selectedWarnings.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-xs text-amber-700">{selectedWarnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : null}
-      <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-sm font-semibold">Export Pack</h3>
-          <span className={`rounded-full px-2 py-0.5 text-xs ${preflight?.status === "pass" ? "bg-emerald-100 text-emerald-700" : preflight?.status === "warn" ? "bg-amber-100 text-amber-700" : preflight?.status === "fail" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
-            {preflight?.status ?? "not-run"}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="rounded border px-2 py-1 text-xs" onClick={() => void runPreflight()} disabled={isRunningPreflight}>{isRunningPreflight ? "Running..." : "Run Preflight"}</button>
-          <button className="rounded bg-slate-900 px-2 py-1 text-xs text-white" onClick={() => void exportJob()} disabled={isExporting}>{isExporting ? "Exporting..." : "Export Job"}</button>
-          <a
-            className={`rounded border px-2 py-1 text-xs ${exportResult?.svgUrl ? "" : "pointer-events-none opacity-40"}`}
-            href={exportResult?.svgUrl ?? "#"}
-            download={`job-${designJobId}.svg`}
-          >
-            Download SVG
-          </a>
-          <a
-            className={`rounded border px-2 py-1 text-xs ${exportResult?.manifestUrl ? "" : "pointer-events-none opacity-40"}`}
-            href={exportResult?.manifestUrl ?? "#"}
-            download={`job-${designJobId}-manifest.json`}
-          >
-            Download Manifest JSON
-          </a>
-        </div>
-        <label className="block text-xs">
-          Batch Job IDs (comma separated)
-          <input value={batchIds} onChange={(event) => setBatchIds(event.target.value)} placeholder="job_a,job_b" className="mt-1 w-full rounded border px-2 py-1" />
-        </label>
-        <button className="rounded border px-2 py-1 text-xs" onClick={() => void exportBatch()} disabled={isExporting}>Export Selected Jobs</button>
-        <div className="rounded border bg-white p-2 text-xs">
-          <p className="font-medium">Preflight Summary</p>
-          <p className="mt-1 text-slate-700">{groupedIssues.error.length} errors ┬╖ {groupedIssues.warning.length} warnings ┬╖ {groupedIssues.info.length} info</p>
-          {(groupedIssues.error.length + groupedIssues.warning.length + groupedIssues.info.length) > 0 ? (
-            <ul className="mt-2 list-disc space-y-1 pl-4 text-slate-700">
-              {[...groupedIssues.error, ...groupedIssues.warning, ...groupedIssues.info].map((issue) => (
-                <li key={`${issue.code}-${issue.objectId ?? issue.message}`}>{issue.message}{issue.objectId ? ` (${issue.objectId})` : ""}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-slate-500">Run preflight to see validation messages.</p>
-          )}
-        </div>
-        {exportResult ? (
-          <div className="space-y-2 rounded border bg-white p-2 text-xs">
-            <p><strong>Last export:</strong> {new Date(exportResult.exportedAt).toLocaleString()}</p>
-            <p><strong>SVG size:</strong> {(exportResult.svgByteSize / 1024).toFixed(2)} KB ┬╖ <strong>Manifest size:</strong> {(exportResult.manifestByteSize / 1024).toFixed(2)} KB</p>
-            {exportResult.warnings.length > 0 ? <ul className="list-disc pl-4 text-amber-700">{exportResult.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
-            {exportResult.errors.length > 0 ? <ul className="list-disc pl-4 text-red-700">{exportResult.errors.map((error) => <li key={error}>{error}</li>)}</ul> : null}
-            <details>
-              <summary className="cursor-pointer font-medium">Advanced</summary>
-              <div className="mt-2 space-y-2">
-                <label className="block text-xs">Manifest JSON<textarea readOnly value={exportResult.manifest} className="mt-1 h-28 w-full rounded border px-2 py-1 font-mono" /></label>
-                <label className="block text-xs">SVG<textarea readOnly value={exportResult.svg} className="mt-1 h-24 w-full rounded border px-2 py-1 font-mono" /></label>
-                <div className="flex gap-2">
-                  <button className="rounded border px-2 py-1 text-xs" onClick={() => void copyText(exportResult.manifest, "Manifest JSON")}>Copy Manifest</button>
-                  <button className="rounded border px-2 py-1 text-xs" onClick={() => void copyText(exportResult.svg, "SVG")}>Copy SVG</button>
-                </div>
-              </div>
-            </details>
+              Use Local Draft
+            </button>
+            <button
+              className="rounded border border-amber-400 px-2 py-1 hover:bg-amber-100"
+              onClick={autosave.useServerVersion}
+            >
+              Use Server Version
+            </button>
           </div>
         ) : null}
-      </section>
-      <pre className="max-h-72 overflow-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(doc ?? createDefaultPlacementDocument(), null, 2)}</pre>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="rounded border px-2 py-1 text-sm hover:bg-slate-50"
+            onClick={() => addText("text_line")}
+          >
+            Add Text Line
+          </button>
+          <button
+            className="rounded border px-2 py-1 text-sm hover:bg-slate-50"
+            onClick={() => addText("text_block")}
+          >
+            Add Text Block
+          </button>
+          <button
+            className="rounded border px-2 py-1 text-sm hover:bg-slate-50"
+            onClick={() => addText("text_arc")}
+          >
+            Add Curved Text
+          </button>
+          <button
+            className="rounded border px-2 py-1 text-sm disabled:opacity-50 hover:bg-slate-50"
+            disabled={undoStack.length === 0}
+            onClick={handleUndo}
+          >
+            Undo
+          </button>
+          <button
+            className="rounded border px-2 py-1 text-sm disabled:opacity-50 hover:bg-slate-50"
+            disabled={redoStack.length === 0}
+            onClick={handleRedo}
+          >
+            Redo
+          </button>
         </div>
 
-        <InspectorPanel
-          doc={doc}
-          selected={selected}
-          selectedObjectId={selectedObjectId}
-          transformValues={transformValues}
-          validationErrors={transformErrors}
-          onSelectedObjectChange={setSelectedObjectId}
-          onTransformChange={onTransformChange}
-          onBlurTransformField={onBlurTransformField}
-          onToggleAspectRatio={onToggleAspectRatio}
-          onResetRotation={onResetRotation}
-          onCenterOnCanvas={onCenterOnCanvas}
-          onDuplicate={onDuplicate}
-          onDelete={onDelete}
-          onBringForward={onBringForward}
-          onSendBackward={onSendBackward}
-          onUpdateOpacity={(opacity) => isImageObject(selected) ? updateSelectedImage({ opacity }) : undefined}
-          onToggleLock={() => {
-            if (!selected) return;
-            setLockedObjectIds((prev) => {
-              const next = new Set(prev);
-              if (next.has(selected.id)) {
-                next.delete(selected.id);
-              } else {
-                next.add(selected.id);
-              }
-              return next;
-            });
-          }}
-          onToggleHide={() => {
-            if (!selected) return;
-            setHiddenObjectIds((prev) => {
-              const next = new Set(prev);
-              if (next.has(selected.id)) {
-                next.delete(selected.id);
-              } else {
-                next.add(selected.id);
-              }
-              return next;
-            });
-          }}
-          onUpdateBlendMode={(blendMode) => selected ? setBlendModeByObjectId((prev) => ({ ...prev, [selected.id]: blendMode })) : undefined}
-          hiddenObjectIds={hiddenObjectIds}
-          lockedObjectIds={lockedObjectIds}
-          blendModeByObjectId={blendModeByObjectId}
-        />
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="rounded border px-2 py-1 text-sm hover:bg-slate-50"
+            onClick={() => setAssetPickerOpen((open) => !open)}
+          >
+            Add Image from Assets
+          </button>
+          <button
+            className="rounded border px-2 py-1 text-sm disabled:opacity-50 hover:enabled:bg-slate-50"
+            disabled={!selected}
+            onClick={duplicateSelectedLayer}
+          >
+            Duplicate Layer
+          </button>
+          <button
+            className="rounded border px-2 py-1 text-sm disabled:opacity-50 hover:enabled:bg-slate-50"
+            disabled={!selected}
+            onClick={deleteSelectedLayer}
+          >
+            Delete Layer
+          </button>
+        </div>
       </div>
-      <p className="min-h-5 text-xs text-slate-700">{statusMessage}</p>
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[360px_minmax(0,1fr)_360px]">
+        <div className="order-3 min-h-0 space-y-3 overflow-auto pr-1 lg:order-1 lg:pr-2">
+          <h3 className="text-sm font-semibold lg:hidden">Artwork Assets & Layers</h3>
+          {renderArtworkAssetsSection()}
+
+          <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3 lg:max-h-[34vh] lg:overflow-auto">
+            <h3 className="text-sm font-semibold">Layers</h3>
+            <div className="max-h-52 space-y-1 overflow-auto">
+              {doc.objects.map((entry, index) => (
+                <div
+                  key={entry.id}
+                  draggable
+                  onDragStart={(event) => onLayerDragStart(event, entry.id)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => onLayerDrop(entry.id)}
+                  className={`grid grid-cols-[auto_1fr_auto_auto] items-center gap-2 rounded border bg-white px-2 py-1 text-xs ${selectedObjectId === entry.id ? "border-blue-500" : "border-slate-200"}`}
+                >
+                  <button className="w-6" onClick={() => setSelectedObjectId(entry.id)}>{objectIcon(entry.kind)}</button>
+                  <input
+                    value={defaultLayerName(entry, index)}
+                    onChange={(event) => patchLayer(entry.id, { layerName: event.target.value })}
+                    onFocus={() => setSelectedObjectId(entry.id)}
+                    className="rounded border px-1 py-0.5"
+                  />
+                  <button className="rounded border px-1" onClick={() => patchLayer(entry.id, { visible: !(entry.visible ?? true) })}>{entry.visible === false ? "≡ƒÖê" : "≡ƒæü"}</button>
+                  <button className="rounded border px-1" onClick={() => patchLayer(entry.id, { locked: !(entry.locked ?? false) })}>{entry.locked ? "≡ƒöÆ" : "≡ƒöô"}</button>
+                </div>
+              ))}
+              {doc.objects.length === 0 ? <p className="text-xs text-slate-600">No layers yet.</p> : null}
+            </div>
+          </section>
+
+          {isAssetPickerOpen ? (
+            renderArtworkAssetsSection()
+          ) : null}
+          <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3 text-black lg:max-h-[42vh] lg:overflow-auto">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold">Export Pack</h3>
+              <span className={`rounded-full px-2 py-0.5 text-xs ${preflight?.status === "pass" ? "bg-emerald-100 text-emerald-700" : preflight?.status === "warn" ? "bg-amber-100 text-amber-700" : preflight?.status === "fail" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
+                {preflight?.status ?? "not-run"}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button className="rounded border px-2 py-1 text-xs" onClick={() => void runPreflight()} disabled={isRunningPreflight}>{isRunningPreflight ? "Running..." : "Run Preflight"}</button>
+              <button className="rounded bg-slate-900 px-2 py-1 text-xs text-white" onClick={() => void exportJob()} disabled={isExporting}>{isExporting ? "Exporting..." : "Export Job"}</button>
+              <a
+                className={`rounded border px-2 py-1 text-xs ${exportResult?.svgUrl ? "" : "pointer-events-none opacity-40"}`}
+                href={exportResult?.svgUrl ?? "#"}
+                download={`job-${designJobId}.svg`}
+              >
+                Download SVG
+              </a>
+              <a
+                className={`rounded border px-2 py-1 text-xs ${exportResult?.manifestUrl ? "" : "pointer-events-none opacity-40"}`}
+                href={exportResult?.manifestUrl ?? "#"}
+                download={`job-${designJobId}-manifest.json`}
+              >
+                Download Manifest JSON
+              </a>
+            </div>
+            <label className="block text-xs">
+              Batch Job IDs (comma separated)
+              <input value={batchIds} onChange={(event) => setBatchIds(event.target.value)} placeholder="job_a,job_b" className="mt-1 w-full rounded border px-2 py-1" />
+            </label>
+            <button className="rounded border px-2 py-1 text-xs" onClick={() => void exportBatch()} disabled={isExporting}>Export Selected Jobs</button>
+            <div className="rounded border bg-white p-2 text-xs">
+              <p className="font-medium">Preflight Summary</p>
+              <p className="mt-1 text-slate-700">{groupedIssues.error.length} errors ┬╖ {groupedIssues.warning.length} warnings ┬╖ {groupedIssues.info.length} info</p>
+              {(groupedIssues.error.length + groupedIssues.warning.length + groupedIssues.info.length) > 0 ? (
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-slate-700">
+                  {[...groupedIssues.error, ...groupedIssues.warning, ...groupedIssues.info].map((issue) => (
+                    <li key={`${issue.code}-${issue.objectId ?? issue.message}`}>{issue.message}{issue.objectId ? ` (${issue.objectId})` : ""}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-slate-500">Run preflight to see validation messages.</p>
+              )}
+            </div>
+            {exportResult ? (
+              <div className="space-y-2 rounded border bg-white p-2 text-xs">
+                <p><strong>Last export:</strong> {new Date(exportResult.exportedAt).toLocaleString()}</p>
+                <p><strong>SVG size:</strong> {(exportResult.svgByteSize / 1024).toFixed(2)} KB ┬╖ <strong>Manifest size:</strong> {(exportResult.manifestByteSize / 1024).toFixed(2)} KB</p>
+                {exportResult.warnings.length > 0 ? <ul className="list-disc pl-4 text-black">{exportResult.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+                {exportResult.errors.length > 0 ? <ul className="list-disc pl-4 text-black">{exportResult.errors.map((error) => <li key={error}>{error}</li>)}</ul> : null}
+                <details>
+                  <summary className="cursor-pointer font-medium">Advanced</summary>
+                  <div className="mt-2 space-y-2">
+                    <label className="block text-xs">Manifest JSON<textarea readOnly value={exportResult.manifest} className="mt-1 h-28 w-full rounded border px-2 py-1 font-mono" /></label>
+                    <label className="block text-xs">SVG<textarea readOnly value={exportResult.svg} className="mt-1 h-24 w-full rounded border px-2 py-1 font-mono" /></label>
+                    <div className="flex gap-2">
+                      <button className="rounded border px-2 py-1 text-xs" onClick={() => void copyText(exportResult.manifest, "Manifest JSON")}>Copy Manifest</button>
+                      <button className="rounded border px-2 py-1 text-xs" onClick={() => void copyText(exportResult.svg, "SVG")}>Copy SVG</button>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            ) : null}
+          </section>
+          <pre className="max-h-72 overflow-auto rounded bg-slate-50 p-2 text-xs lg:max-h-44">{JSON.stringify(doc ?? createDefaultPlacementDocument(), null, 2)}</pre>
+        </div>
+
+        <div className="order-1 min-h-0 space-y-3 overflow-auto pr-1 lg:order-2 lg:pr-2">
+          <h3 className="text-sm font-semibold lg:hidden">Canvas Preview</h3>
+          <section className="space-y-3 rounded border border-slate-200 bg-slate-50 p-3 lg:max-h-[52vh] lg:overflow-auto">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold">Canvas Preview</h3>
+              <div className="inline-flex rounded border border-slate-300 bg-white p-0.5 text-xs">
+                <button
+                  type="button"
+                  className={`rounded px-2 py-1 ${previewMode === "2d" ? "bg-slate-900 text-white" : "text-slate-700"}`}
+                  onClick={() => setPreviewMode("2d")}
+                >
+                  2D
+                </button>
+                <button
+                  type="button"
+                  className={`rounded px-2 py-1 ${previewMode === "3d" ? "bg-slate-900 text-white" : "text-slate-700"}`}
+                  onClick={() => setPreviewMode("3d")}
+                >
+                  3D
+                </button>
+              </div>
+            </div>
+            {previewMode === "2d" ? (
+              <>
+                <div className="flex flex-wrap gap-3 text-xs">
+                  <label className="text-xs">DPI
+                    <input type="number" min={72} step={1} value={canvasDpi} onChange={(event) => setCanvasDpi(Math.max(72, Number(event.target.value) || 96))} className="ml-2 w-20 rounded border px-2 py-1" />
+                  </label>
+                  <label className="flex items-center gap-1"><input type="checkbox" checked={gridEnabled} onChange={(event) => setGridEnabled(event.target.checked)} /> Grid</label>
+                  <label className="flex items-center gap-1">Spacing
+                    <select value={gridSpacingMm} onChange={(event) => setGridSpacingMm(Number(event.target.value) === 10 ? 10 : 5)} className="rounded border px-1 py-0.5">
+                      <option value={5}>5mm</option>
+                      <option value={10}>10mm</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1"><input type="checkbox" checked={showCenterlines} onChange={(event) => setShowCenterlines(event.target.checked)} /> Centerlines</label>
+                  <label className="flex items-center gap-1"><input type="checkbox" checked={showSafeMargin} onChange={(event) => setShowSafeMargin(event.target.checked)} /> Safe margin</label>
+                  <label className="flex items-center gap-1"><input type="checkbox" checked={keepAspectResize} onChange={(event) => setKeepAspectResize(event.target.checked)} /> Keep aspect resize</label>
+                </div>
+                <div className="relative overflow-hidden rounded border border-slate-200 bg-slate-100" style={{ aspectRatio: `${doc.canvas.widthMm} / ${doc.canvas.heightMm}` }}>
+                  <img
+                    src={resolvedModelImageUrl}
+                    alt="Product model preview"
+                    className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+                    draggable={false}
+                  />
+                  <div className="absolute inset-0 z-10 pointer-events-auto" style={previewOverlayStyle}>
+                    <WrapCanvas
+                      template={{ widthMm: 300, heightMm: 300, safeMarginMm: 2 }}
+                      objects={canvasObjects}
+                      selectedId={selectedObjectId}
+                      dpi={canvasPreviewDpi}
+                      gridEnabled={gridEnabled}
+                      gridSpacingMm={gridSpacingMm}
+                      showCenterlines={showCenterlines}
+                      showSafeMargin={showSafeMargin}
+                      keepAspectRatio={keepAspectResize}
+                      displayMode="overlay"
+                      onSelect={setSelectedObjectId}
+                      onUpdateTransform={updateObjectTransform}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-slate-600">Drag to move. Shift-drag locks axis. Arrow keys nudge 1mm (Shift = 5mm).</p>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <label className="text-xs">Texture size
+                    <select value={textureSizePx} onChange={(event) => setTextureSizePx(event.target.value === "1024" ? 1024 : 2048)} className="ml-2 rounded border px-2 py-1">
+                      <option value="1024">1024</option>
+                      <option value="2048">2048</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="overflow-hidden rounded border border-slate-200 bg-slate-900" style={{ height: "420px" }}>
+                  <GlbPreview assetKey={previewModelAssetKey} artwork={activeArtworkSvg} textureSizePx={textureSizePx} />
+                </div>
+                <p className="text-xs text-slate-600">Model path: /public/model-assets/{previewModelAssetKey}/model.glb</p>
+                {!activeArtworkSvg ? <p className="text-xs text-amber-700">Upload SVG artwork and add it to canvas to texture WrapArea.</p> : null}
+              </>
+            )}
+          </section>
+        </div>
+
+        <div className="order-2 min-h-0 space-y-3 overflow-auto pr-1 lg:order-3">
+          <h3 className="mb-3 text-sm font-semibold lg:hidden">Inspector</h3>
+          <InspectorPanel
+            doc={doc}
+            selected={selected}
+            selectedObjectId={selectedObjectId}
+            transformValues={transformValues}
+            validationErrors={transformErrors}
+            onSelectedObjectChange={setSelectedObjectId}
+            onTransformChange={onTransformChange}
+            onBlurTransformField={onBlurTransformField}
+            onToggleAspectRatio={onToggleAspectRatio}
+            onResetRotation={onResetRotation}
+            onCenterOnCanvas={onCenterOnCanvas}
+            onDuplicate={onDuplicate}
+            onDelete={onDelete}
+            onBringForward={onBringForward}
+            onSendBackward={onSendBackward}
+            onUpdateOpacity={(opacity) => isImageObject(selected) ? updateSelectedImage({ opacity }) : undefined}
+            onToggleLock={() => {
+              if (!selected) return;
+              setLockedObjectIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(selected.id)) {
+                  next.delete(selected.id);
+                } else {
+                  next.add(selected.id);
+                }
+                return next;
+              });
+            }}
+            onToggleHide={() => {
+              if (!selected) return;
+              setHiddenObjectIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(selected.id)) {
+                  next.delete(selected.id);
+                } else {
+                  next.add(selected.id);
+                }
+                return next;
+              });
+            }}
+            onUpdateBlendMode={(blendMode) => selected ? setBlendModeByObjectId((prev) => ({ ...prev, [selected.id]: blendMode })) : undefined}
+            hiddenObjectIds={hiddenObjectIds}
+            lockedObjectIds={lockedObjectIds}
+            blendModeByObjectId={blendModeByObjectId}
+          />
+
+          <section className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3 text-black lg:max-h-[52vh] lg:overflow-auto">
+            <h3 className="text-sm font-semibold">Scene Objects</h3>
+            <label className="block text-sm"><span>Selected Object</span><select value={selectedObjectId ?? ""} onChange={(event) => setSelectedObjectId(event.target.value || null)} className="w-full rounded border px-2 py-1"><option value="">None</option>{doc.objects.map((entry, index) => (<option key={entry.id} value={entry.id}>{defaultLayerName(entry, index)}</option>))}</select></label>
+
+            {isImageObject(selected) && selected.locked ? <p className="text-xs text-black">Selected layer is locked.</p> : null}
+            {isTextObject(selected) && selected.locked ? <p className="text-xs text-black">Selected layer is locked.</p> : null}
+
+            {isImageObject(selected) ? (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="text-sm">X (mm)<input type="number" step="0.01" value={selected.xMm} onChange={(e) => updateSelectedImage({ xMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+                <label className="text-sm">Y (mm)<input type="number" step="0.01" value={selected.yMm} onChange={(e) => updateSelectedImage({ yMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+                <label className="text-sm">Width (mm)<input type="number" min="0.01" step="0.01" value={selected.widthMm} onChange={(e) => updateSelectedImage({ widthMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+                <label className="text-sm">Height (mm)<input type="number" min="0.01" step="0.01" value={selected.heightMm} onChange={(e) => updateSelectedImage({ heightMm: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+                <label className="text-sm">Rotation (deg)<input type="number" step="0.01" value={selected.rotationDeg} onChange={(e) => updateSelectedImage({ rotationDeg: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+                <label className="text-sm">Opacity<input type="number" min="0" max="1" step="0.01" value={selected.opacity} onChange={(e) => updateSelectedImage({ opacity: Number(e.target.value) })} className="w-full rounded border px-2 py-1" /></label>
+              </div>
+            ) : null}
+
+            {isTextObject(selected) ? <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="text-sm sm:col-span-2">Content<textarea ref={textContentInputRef} value={selected.content} onChange={(event) => updateSelectedText((obj) => ({ ...obj, content: event.target.value }))} className="w-full rounded border px-2 py-1" rows={3} /></label>
+                <label className="text-sm">Font<select value={selected.fontFamily} onChange={(event) => updateSelectedText((obj) => ({ ...obj, fontFamily: event.target.value }))} className="w-full rounded border px-2 py-1">{curatedFonts.map((font) => <option key={font} value={font}>{font}</option>)}</select></label>
+                <label className="text-sm">Font Size (mm)<input type="number" step="0.1" value={selected.fontSizeMm} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontSizeMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
+                <label className="text-sm">Letter Spacing (mm)<input type="number" step="0.1" value={selected.letterSpacingMm} onChange={(e) => updateSelectedText((obj) => ({ ...obj, letterSpacingMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
+                <label className="text-sm">Line Height<input type="number" step="0.1" value={selected.lineHeight} onChange={(e) => updateSelectedText((obj) => ({ ...obj, lineHeight: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
+                <label className="text-sm">Box Width (mm)<input type="number" step="0.1" value={selected.boxWidthMm} onChange={(e) => updateSelectedText((obj) => ({ ...obj, boxWidthMm: Number(e.target.value) }))} className="w-full rounded border px-2 py-1" /></label>
+                <div className="sm:col-span-2 flex flex-wrap items-center gap-2 text-sm"><label><input type="checkbox" checked={selected.fontWeight >= 700} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontWeight: e.target.checked ? 700 : 400 }))} /> Bold</label><label><input type="checkbox" checked={selected.fontStyle === "italic"} onChange={(e) => updateSelectedText((obj) => ({ ...obj, fontStyle: e.target.checked ? "italic" : "normal" }))} /> Italic</label><label><input type="checkbox" checked={selected.allCaps} onChange={(e) => updateSelectedText((obj) => ({ ...obj, allCaps: e.target.checked }))} /> All caps</label><label><input type="checkbox" checked={selected.mirrorX} onChange={(e) => updateSelectedText((obj) => ({ ...obj, mirrorX: e.target.checked }))} /> Mirror X</label><label><input type="checkbox" checked={selected.mirrorY} onChange={(e) => updateSelectedText((obj) => ({ ...obj, mirrorY: e.target.checked }))} /> Mirror Y</label></div>
+                {selected.kind === "text_arc" && <><label className="text-sm">Arc Radius (mm)<input type="number" step="0.1" value={selected.arc.radiusMm} onChange={(e) => updateSelectedText((obj) => obj.kind === "text_arc" ? { ...obj, arc: { ...obj.arc, radiusMm: Number(e.target.value) } } : obj)} className="w-full rounded border px-2 py-1" /></label><label className="text-sm">Arc Start Angle<input type="number" step="0.1" value={selected.arc.startAngleDeg} onChange={(e) => updateSelectedText((obj) => obj.kind === "text_arc" ? { ...obj, arc: { ...obj.arc, startAngleDeg: Number(e.target.value) } } : obj)} className="w-full rounded border px-2 py-1" /></label></>}
+                <button onClick={onConvertToOutline} className="rounded bg-slate-900 px-3 py-2 text-sm text-white sm:col-span-2">Convert to Outline</button>
+              </div> : null}
+
+            {selectedWarnings.length > 0 ? <ul className="list-disc space-y-1 pl-4 text-xs text-black">{selectedWarnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : null}
+          </section>
+        </div>
+      </div>
     </section>
   );
 }

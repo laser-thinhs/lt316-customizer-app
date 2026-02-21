@@ -1,4 +1,4 @@
-export const SECTION_TYPES = ["hero", "rich-text", "image-text", "button-row"] as const;
+export const SECTION_TYPES = ["hero", "richText", "imageText", "buttonRow"] as const;
 
 export type SectionType = (typeof SECTION_TYPES)[number];
 

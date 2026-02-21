@@ -26,6 +26,7 @@ export default function HomePageClient() {
   const [isLoadingProducts, setLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isDbUnavailable, setDbUnavailable] = useState(false);
 
   const { isCreatingJob, setCreatingJob } = useUIStore();
 
@@ -35,6 +36,12 @@ export default function HomePageClient() {
       ? selectedProductId
       : products[0].id;
   }, [products, selectedProductId]);
+
+  const isDbFallbackMode = useMemo(
+    () => resolvedSelectedProductId.startsWith("dev-"),
+    [resolvedSelectedProductId]
+  );
+  const isDbOfflineMode = isDbFallbackMode || isDbUnavailable;
 
   useEffect(() => {
     (async () => {
@@ -76,6 +83,11 @@ export default function HomePageClient() {
       return;
     }
 
+    if (isDbOfflineMode) {
+      setError("Database is offline. Start PostgreSQL (docker compose up -d db) to create jobs.");
+      return;
+    }
+
     setError(null);
     setCreatingJob(true);
 
@@ -92,8 +104,13 @@ export default function HomePageClient() {
 
       const json: unknown = await res.json();
       if (!res.ok) {
+        const apiError = (json as { error?: { message?: string; code?: string } })?.error;
+        if (res.status === 503 || apiError?.code === "DATABASE_UNAVAILABLE") {
+          setDbUnavailable(true);
+          throw new Error("Database is offline. Start PostgreSQL (docker compose up -d db) to create jobs.");
+        }
         throw new Error(
-          (json as { error?: { message?: string } })?.error?.message || "Failed to create job"
+          apiError?.message || "Failed to create job"
         );
       }
 
@@ -111,53 +128,89 @@ export default function HomePageClient() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-xl px-4 py-6 sm:py-10">
-      <div className="space-y-6">
-        <header className="space-y-1">
-          <h1 className="text-xl font-bold tracking-tight">LT316 Proof Builder</h1>
-          <p className="text-sm text-slate-600">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_55%_20%,rgba(59,130,246,0.28)_0%,rgba(8,47,73,0.42)_26%,rgba(2,6,23,0.94)_62%),linear-gradient(180deg,#030712_0%,#020617_100%)] px-4 py-6 text-slate-100 sm:py-10">
+      <div className="mx-auto w-full max-w-screen-2xl space-y-8">
+        <header className="space-y-3 text-center">
+          <p className="text-xs uppercase tracking-[0.24em] text-sky-300/80">Laser Things 316</p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-100 sm:text-3xl">Precision Jigs & Laser-Ready Templates</h1>
+          <p className="mx-auto max-w-2xl text-sm text-slate-300">
             Layer 2.1 foundation: text objects, typography controls, and deterministic mm placement.
           </p>
         </header>
 
-        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <ProductSelector
-            products={products}
-            value={resolvedSelectedProductId}
-            onChange={setSelectedProductId}
-            isLoading={isLoadingProducts}
-            error={productsError}
-          />
+        <section className="mx-auto grid w-full max-w-5xl gap-6 rounded-2xl border border-sky-400/25 bg-slate-950/55 p-4 shadow-[0_0_0_1px_rgba(56,189,248,0.18),0_22px_70px_rgba(2,6,23,0.72)] backdrop-blur-sm sm:p-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold text-slate-100">Start a new job</h2>
+            <ProductSelector
+              products={products}
+              value={resolvedSelectedProductId}
+              onChange={setSelectedProductId}
+              isLoading={isLoadingProducts}
+              error={productsError}
+            />
 
-          <button
-            onClick={createJob}
-            disabled={
-              isCreatingJob ||
-              !resolvedSelectedProductId ||
-              isLoadingProducts ||
-              Boolean(productsError)
-            }
-            className="
-              w-full rounded-md bg-slate-900 px-4 py-2
-              text-sm font-medium text-white
-              disabled:cursor-not-allowed disabled:opacity-60
-            "
-          >
-            {isCreatingJob ? "Creating Job..." : "New Job"}
-          </button>
+            <button
+              onClick={createJob}
+              disabled={
+                isCreatingJob ||
+                !resolvedSelectedProductId ||
+                isLoadingProducts ||
+                Boolean(productsError) ||
+                isDbOfflineMode
+              }
+              className="
+                w-full rounded-md border border-fuchsia-300/45 bg-fuchsia-600/70 px-4 py-2
+                text-sm font-semibold text-white transition-colors hover:bg-fuchsia-500/80
+                disabled:cursor-not-allowed disabled:opacity-60
+              "
+            >
+              {isDbOfflineMode
+                ? "Database Offline - Start DB"
+                : isCreatingJob
+                  ? "Creating Job..."
+                  : "New Job"}
+            </button>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-rose-300">{error}</p>}
+            {isDbOfflineMode && !error ? (
+              <p className="text-sm text-amber-300">Start PostgreSQL to enable job creation.</p>
+            ) : null}
+          </div>
+
+          <aside className="space-y-3 rounded-xl border border-fuchsia-400/30 bg-fuchsia-950/25 p-4 text-sm text-fuchsia-100">
+            {job ? (
+              <>
+                <h3 className="font-semibold text-fuchsia-50">Current job</h3>
+                <JobSummaryCard job={job} />
+                <p className="rounded-md border border-fuchsia-300/30 bg-fuchsia-950/35 px-3 py-2 text-xs text-fuchsia-200">
+                  Continue editing in the workspace below. Create a new job at any time from the left panel.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="font-semibold text-fuchsia-50">Workflow</h3>
+                <ol className="list-decimal space-y-1 pl-5 text-fuchsia-100/90">
+                  <li>Select a product profile.</li>
+                  <li>Create a job with the default machine.</li>
+                  <li>Adjust text, artwork, and placement.</li>
+                  <li>Run preflight before export.</li>
+                </ol>
+                <p className="rounded-md border border-fuchsia-300/30 bg-fuchsia-950/35 px-3 py-2 text-xs text-fuchsia-200">
+                  EXPERIMENTAL: Dimensions may need adjustment. Verify before engraving.
+                </p>
+              </>
+            )}
+          </aside>
         </section>
 
         {job && (
-          <>
-            <JobSummaryCard job={job} />
-            <PlacementEditor
-              designJobId={job.id}
-              placement={job.placementJson}
-              onUpdated={(placementJson) => setJob((prev) => (prev ? { ...prev, placementJson } : prev))}
-            />
-          </>
+          <PlacementEditor
+            designJobId={job.id}
+            placement={job.placementJson}
+            modelImageUrl={job.previewImagePath ?? undefined}
+            modelMaskUrl={job.previewMaskImagePath ?? job.productProfile.toolOutlineSvgPath ?? undefined}
+            onUpdated={(placementJson) => setJob((prev) => (prev ? { ...prev, placementJson } : prev))}
+          />
         )}
       </div>
     </main>
