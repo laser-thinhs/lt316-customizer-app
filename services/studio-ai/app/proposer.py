@@ -48,9 +48,13 @@ def propose_layout(layout: Layout, instruction: str) -> ProposeResponse:
     if not changes:
         warnings.append("No deterministic rule matched the instruction; layout unchanged.")
 
-    # Safety guard: never change id/type from source for existing blocks
-    for original, updated in zip(layout.blocks, next_layout.blocks):
-        if original.id != updated.id or original.type != updated.type:
+    # Safety guard: never change id/type for existing source blocks.
+    original_types = {block.id: block.type for block in layout.blocks}
+    for updated in next_layout.blocks:
+        source_type = original_types.get(updated.id)
+        if source_type is None:
+            continue
+        if source_type != updated.type:
             raise ValueError("reserved field mutation detected")
 
     summary = "Applied deterministic proposal rules." if changes else "No structural changes proposed."
