@@ -10,6 +10,7 @@ import { DEFAULT_SCENE_PRESET_ID, getScenePresetById, SCENE_PRESETS } from "./sc
 
 type Props = {
   assetKey: string;
+  glbPath?: string;
   artwork: CanonicalSvgArtwork | null;
   textureSizePx: 1024 | 2048;
   className?: string;
@@ -274,8 +275,11 @@ function Scene({
   );
 }
 
-export default function GlbPreview({ assetKey, artwork, textureSizePx, className }: Props) {
-  const glbPath = useMemo(() => `/model-assets/${assetKey}/model.glb`, [assetKey]);
+export default function GlbPreview({ assetKey, glbPath, artwork, textureSizePx, className }: Props) {
+  const resolvedGlbPath = useMemo(
+    () => (glbPath && glbPath.trim().length > 0 ? glbPath : `/model-assets/${assetKey}/model.glb`),
+    [glbPath, assetKey]
+  );
   const [pathStatus, setPathStatus] = useState<PathStatus>({ state: "checking" });
   const [presetId, setPresetId] = useState(DEFAULT_SCENE_PRESET_ID);
   const [groundEnabled, setGroundEnabled] = useState(true);
@@ -315,12 +319,12 @@ export default function GlbPreview({ assetKey, artwork, textureSizePx, className
     const verifyPath = async () => {
       setPathStatus({ state: "checking" });
       try {
-        const response = await fetch(glbPath, { method: "HEAD" });
+        const response = await fetch(resolvedGlbPath, { method: "HEAD" });
         if (cancelled) return;
         if (!response.ok) {
           setPathStatus({
             state: "missing",
-            message: `GLB not found. Expected: ${glbPath}`
+            message: `GLB not found. Expected: ${resolvedGlbPath}`
           });
           return;
         }
@@ -329,7 +333,7 @@ export default function GlbPreview({ assetKey, artwork, textureSizePx, className
         if (!cancelled) {
           setPathStatus({
             state: "missing",
-            message: `Unable to load GLB. Expected: ${glbPath}`
+            message: `Unable to load GLB. Expected: ${resolvedGlbPath}`
           });
         }
       }
@@ -340,7 +344,7 @@ export default function GlbPreview({ assetKey, artwork, textureSizePx, className
     return () => {
       cancelled = true;
     };
-  }, [glbPath]);
+  }, [resolvedGlbPath]);
 
   if (pathStatus.state === "checking") {
     return (
@@ -394,7 +398,7 @@ export default function GlbPreview({ assetKey, artwork, textureSizePx, className
       <GlbErrorBoundary
         fallback={
           <div className="flex h-full w-full items-center justify-center px-4 text-center text-xs text-amber-200">
-            Failed to render GLB. Confirm model exists at {glbPath}.
+            Failed to render GLB. Confirm model exists at {resolvedGlbPath}.
           </div>
         }
       >
@@ -413,7 +417,7 @@ export default function GlbPreview({ assetKey, artwork, textureSizePx, className
             }
           >
             <Scene
-              glbPath={glbPath}
+              glbPath={resolvedGlbPath}
               artwork={artwork}
               textureSizePx={textureSizePx}
               presetId={presetId}
