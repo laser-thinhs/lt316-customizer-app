@@ -171,6 +171,23 @@ npm run test:watch
 4. Run tests: `npm test`
 5. Lint code: `npm run lint`
 
+### GitHub PR Tip
+
+If GitHub does not show a **Create pull request** button for your branch, the branch may have no file diff versus `main` (already merged).
+
+Quick recovery:
+
+```bash
+git checkout main
+git pull --ff-only origin main
+git checkout -b feat/<new-change>
+git push -u origin feat/<new-change>
+```
+
+Then open:
+
+`https://github.com/laser-thinhs/lt316-customizer-app/pull/new/feat/<new-change>`
+
 ### Stopping the Application
 
 ```bash
