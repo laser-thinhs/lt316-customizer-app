@@ -34,8 +34,11 @@
         "flipU": false,
         "flipV": false,
         "uOffset": 0,
-        "vOffset": 0
-      }
+        "vOffset": 0,
+        "invertSeamDirection": false
+      },
+      "wrapWidthMm": 229.336,
+      "wrapHeightMm": 210
     },
     {
       "id": "rambler-30oz",
@@ -70,8 +73,11 @@
         "flipU": false,
         "flipV": false,
         "uOffset": 0,
-        "vOffset": 0
-      }
+        "vOffset": 0,
+        "invertSeamDirection": false
+      },
+      "wrapWidthMm": 251.327,
+      "wrapHeightMm": 240
     }
   ]
 }
