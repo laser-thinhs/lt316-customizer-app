@@ -5,11 +5,22 @@ import dynamic from "next/dynamic";
 import { objectPresets } from "@/core/v2/presets";
 import { DesignAsset, DesignJob, Placement } from "@/core/v2/types";
 import type { YetiTemplateManifest, YetiTemplateStyle } from "@/lib/yeti-templates";
+import type { WrapUvTransform } from "@/lib/rendering/svgTexture";
 
 type Props = { initialJobId?: string };
 
 const saveDebounceMs = 350;
 const TemplateMeshPreview3D = dynamic(() => import("@/components/v2/TemplateMeshPreview3D"), { ssr: false });
+const CALIBRATION_KEY_PREFIX = "uv-calibration:";
+
+function normalizeQuarterTurns(rotation: number) {
+  const normalized = ((rotation % 360) + 360) % 360;
+  return (Math.round(normalized / 90) * 90) % 360;
+}
+
+function getCalibrationStorageKey(templateMeshPath?: string) {
+  return templateMeshPath ? `${CALIBRATION_KEY_PREFIX}${templateMeshPath}` : null;
+}
 
 function normalizeRotation(deg: number) {
   const normalized = ((deg + 180) % 360 + 360) % 360 - 180;
@@ -42,6 +53,7 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
   const [submitState, setSubmitState] = useState<"idle" | "submitting" | "submitted" | "error">("idle");
   const [submitMessage, setSubmitMessage] = useState<string>("");
   const [debugUv, setDebugUv] = useState(false);
+  const [uvCalibration, setUvCalibration] = useState<WrapUvTransform>({});
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -72,6 +84,48 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
   );
 
   useEffect(() => {
+    const storageKey = getCalibrationStorageKey(selectedStyle?.meshPath);
+    if (!storageKey || typeof window === "undefined") {
+      setUvCalibration({});
+      return;
+    }
+
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      setUvCalibration({});
+      return;
+    }
+
+    try {
+      setUvCalibration(JSON.parse(raw) as WrapUvTransform);
+    } catch {
+      setUvCalibration({});
+    }
+  }, [selectedStyle?.meshPath]);
+
+  const effectiveUvTransform = useMemo<WrapUvTransform>(() => {
+    const base = selectedStyle?.uvTransform ?? {};
+    return {
+      rotateDeg: normalizeQuarterTurns((base.rotateDeg ?? 0) + (uvCalibration.rotateDeg ?? 0)),
+      flipU: Boolean(base.flipU) !== Boolean(uvCalibration.flipU),
+      flipV: Boolean(base.flipV) !== Boolean(uvCalibration.flipV),
+      uOffset: (base.uOffset ?? 0) + (uvCalibration.uOffset ?? 0),
+      vOffset: (base.vOffset ?? 0) + (uvCalibration.vOffset ?? 0),
+      invertSeamDirection: Boolean(base.invertSeamDirection) !== Boolean(uvCalibration.invertSeamDirection)
+    };
+  }, [selectedStyle?.uvTransform, uvCalibration]);
+
+  function updateCalibration(updater: (prev: WrapUvTransform) => WrapUvTransform) {
+    setUvCalibration((prev) => updater(prev));
+  }
+
+  function saveCalibrationAsDefault() {
+    const storageKey = getCalibrationStorageKey(selectedStyle?.meshPath);
+    if (!storageKey || typeof window === "undefined") return;
+    window.localStorage.setItem(storageKey, JSON.stringify(uvCalibration));
+  }
+
+  useEffect(() => {
     if (!selectedStyle && templateManifest?.styles.length) {
       const firstStyle = templateManifest.styles[0];
       setSelectedStyleId(firstStyle.id);
@@ -84,8 +138,8 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
     return objectPresets.find((item) => item.id === job?.objectDefinitionId) ?? objectPresets[0];
   }, [job?.objectDefinitionId, selectedStyle]);
 
-  const width = objectDef.type === "cylinder" ? Math.round(Math.PI * (objectDef.dimensions_mm.diameter ?? 1)) : objectDef.dimensions_mm.width ?? 200;
-  const height = objectDef.dimensions_mm.height;
+  const width = selectedStyle?.wrapWidthMm ?? (objectDef.type === "cylinder" ? Math.round(Math.PI * (objectDef.dimensions_mm.diameter ?? 1)) : objectDef.dimensions_mm.width ?? 200);
+  const height = selectedStyle?.wrapHeightMm ?? objectDef.dimensions_mm.height;
 
   async function createJob() {
     const defaultDesign = selectedStyle?.designs[0];
@@ -376,7 +430,7 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
                       colorHex={selectedColor?.hex}
                       placement={placement}
                       wrapWidthMm={width}
-                      uvTransform={selectedStyle?.uvTransform}
+                      uvTransform={effectiveUvTransform}
                       debugUv={debugUv}
                       className="h-full w-full"
                     />
@@ -388,6 +442,37 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
                   <input type="checkbox" checked={debugUv} onChange={(e) => setDebugUv(e.target.checked)} />
                   Debug UV
                 </label>
+                <div className="mt-3 rounded border border-slate-200 p-2 text-xs text-slate-700">
+                  <div className="mb-2 font-medium">UV Calibration</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="rounded border px-2 py-0.5"
+                      onClick={() => updateCalibration((prev) => ({ ...prev, rotateDeg: normalizeQuarterTurns((prev.rotateDeg ?? 0) + 90) }))}
+                    >
+                      Rotate 90°
+                    </button>
+                    <label className="flex items-center gap-1">
+                      <input type="checkbox" checked={Boolean(uvCalibration.flipU)} onChange={(e) => updateCalibration((prev) => ({ ...prev, flipU: e.target.checked }))} />
+                      Flip U
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input type="checkbox" checked={Boolean(uvCalibration.flipV)} onChange={(e) => updateCalibration((prev) => ({ ...prev, flipV: e.target.checked }))} />
+                      Flip V
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(uvCalibration.invertSeamDirection)}
+                        onChange={(e) => updateCalibration((prev) => ({ ...prev, invertSeamDirection: e.target.checked }))}
+                      />
+                      Invert Seam Direction
+                    </label>
+                    <button type="button" className="rounded bg-slate-800 px-2 py-0.5 text-white" onClick={saveCalibrationAsDefault}>
+                      Save as Default for this template
+                    </button>
+                  </div>
+                </div>
                 <div className="mt-2 text-center text-xs text-slate-600">Color: {selectedColor?.label ?? job.colorId ?? "n/a"} · Design: {job.templatePreviewSvgPath ?? "upload only"}</div>
               </div>
             </div>

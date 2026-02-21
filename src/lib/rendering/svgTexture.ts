@@ -8,6 +8,27 @@ export type SvgTextureDebugOverlay = {
   enabled?: boolean;
 };
 
+export type WrapUvTransform = {
+  rotateDeg?: number;
+  flipU?: boolean;
+  flipV?: boolean;
+  uOffset?: number;
+  vOffset?: number;
+  invertSeamDirection?: boolean;
+};
+
+export type BuildWrapTextureOptions = {
+  svgText: string;
+  texSizePx?: { width: number; height: number };
+  rotateDeg?: number;
+  seamX?: number;
+  wrapWidthMm?: number;
+  wrapEnabled?: boolean;
+  scale?: number;
+  uvTransform?: WrapUvTransform;
+  debugOverlay?: SvgTextureDebugOverlay;
+};
+
 function drawDebugUvOverlay(ctx: CanvasRenderingContext2D, widthPx: number, heightPx: number) {
   const seamX = Math.round(widthPx * 0.02);
 
@@ -35,7 +56,7 @@ function drawDebugUvOverlay(ctx: CanvasRenderingContext2D, widthPx: number, heig
   ctx.fill();
 
   ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
-  ctx.fillText("UP", arrowBaseX, arrowTopY - heightPx * 0.035);
+  ctx.fillText("UP ↑", arrowBaseX, arrowTopY - heightPx * 0.035);
 
   ctx.fillStyle = "rgba(30, 41, 59, 0.8)";
   ctx.fillRect(seamX - widthPx * 0.006, 0, widthPx * 0.012, heightPx);
@@ -111,6 +132,64 @@ export async function createSvgCanvasTexture(
   return texture;
 }
 
+function normalizeUnitOffset(value: number) {
+  return THREE.MathUtils.euclideanModulo(value, 1);
+}
+
+export function applyWrapTextureTransform(texture: THREE.Texture, options: Omit<BuildWrapTextureOptions, "svgText" | "texSizePx" | "debugOverlay">) {
+  const rotationDeg = options.rotateDeg ?? 0;
+  const normalizedSeamShift = options.wrapEnabled && options.wrapWidthMm && options.wrapWidthMm > 0
+    ? (options.seamX ?? 0) / options.wrapWidthMm
+    : 0;
+  const scale = Math.max(options.scale ?? 1, 0.15);
+
+  const uvRotateDeg = options.uvTransform?.rotateDeg ?? 0;
+  const flipU = Boolean(options.uvTransform?.flipU);
+  const flipV = Boolean(options.uvTransform?.flipV);
+  const invertSeamDirection = Boolean(options.uvTransform?.invertSeamDirection);
+  const baseUOffset = options.uvTransform?.uOffset ?? 0;
+  const baseVOffset = options.uvTransform?.vOffset ?? 0;
+
+  const seamOffset = invertSeamDirection ? -normalizedSeamShift : normalizedSeamShift;
+  let uOffset = normalizeUnitOffset(baseUOffset + seamOffset);
+  let vOffset = normalizeUnitOffset(baseVOffset);
+  let uRepeat = 1 / scale;
+  let vRepeat = 1;
+
+  if (flipU) {
+    uRepeat *= -1;
+    uOffset = 1 - uOffset;
+  }
+
+  if (flipV) {
+    vRepeat = -1;
+    vOffset = 1 - vOffset;
+  }
+
+  texture.flipY = false;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.center.set(0.5, 0.5);
+  texture.matrixAutoUpdate = false;
+  texture.matrix.setUvTransform(
+    normalizeUnitOffset(uOffset),
+    normalizeUnitOffset(vOffset),
+    uRepeat,
+    vRepeat,
+    -THREE.MathUtils.degToRad(rotationDeg + uvRotateDeg),
+    0.5,
+    0.5
+  );
+  texture.needsUpdate = true;
+}
+
+export async function buildWrapTexture(options: BuildWrapTextureOptions): Promise<THREE.CanvasTexture> {
+  const size = options.texSizePx ?? { width: DEFAULT_TEXTURE_WIDTH, height: DEFAULT_TEXTURE_HEIGHT };
+  const texture = await createSvgCanvasTexture(options.svgText, size.width, size.height, options.debugOverlay);
+  applyWrapTextureTransform(texture, options);
+  return texture;
+}
+
 export async function loadSvgTextureFromPath(svgPath: string, debugOverlay?: SvgTextureDebugOverlay): Promise<THREE.CanvasTexture> {
   const response = await fetch(svgPath);
   if (!response.ok) {
@@ -118,5 +197,9 @@ export async function loadSvgTextureFromPath(svgPath: string, debugOverlay?: Svg
   }
 
   const svgText = await response.text();
-  return createSvgCanvasTexture(svgText, DEFAULT_TEXTURE_WIDTH, DEFAULT_TEXTURE_HEIGHT, debugOverlay);
+  return buildWrapTexture({
+    svgText,
+    texSizePx: { width: DEFAULT_TEXTURE_WIDTH, height: DEFAULT_TEXTURE_HEIGHT },
+    debugOverlay
+  });
 }

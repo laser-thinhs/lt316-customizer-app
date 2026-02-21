@@ -5,16 +5,8 @@ import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows, Environment, OrbitControls, useGLTF } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { loadSvgTextureFromPath } from "@/lib/rendering/svgTexture";
+import { applyWrapTextureTransform, buildWrapTexture, type WrapUvTransform } from "@/lib/rendering/svgTexture";
 import type { Placement } from "@/core/v2/types";
-
-type UvTransform = {
-  rotateDeg?: 0 | 90 | 180 | 270;
-  flipU?: boolean;
-  flipV?: boolean;
-  uOffset?: number;
-  vOffset?: number;
-};
 
 type Props = {
   meshPath: string;
@@ -24,7 +16,7 @@ type Props = {
   colorId?: string;
   placement?: Placement;
   wrapWidthMm?: number;
-  uvTransform?: UvTransform;
+  uvTransform?: WrapUvTransform;
   debugUv?: boolean;
 };
 
@@ -140,7 +132,21 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
 
     const applyOverlay = async () => {
       try {
-        const texture = await loadSvgTextureFromPath(overlaySvgPath, { enabled: debugUv });
+        const response = await fetch(overlaySvgPath);
+        if (!response.ok) {
+          throw new Error(`Could not load SVG preview from ${overlaySvgPath}`);
+        }
+        const svgText = await response.text();
+        const texture = await buildWrapTexture({
+          svgText,
+          rotateDeg: placement?.rotation_deg ?? 0,
+          seamX: placement?.seamX_mm ?? 0,
+          wrapEnabled: placement?.wrapEnabled,
+          wrapWidthMm,
+          scale: placement?.scale ?? 1,
+          uvTransform,
+          debugOverlay: { enabled: debugUv }
+        });
         if (cancelled || !labelRef.current) {
           texture.dispose();
           return;
@@ -164,27 +170,20 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
     return () => {
       cancelled = true;
     };
-  }, [overlaySvgPath, debugUv]);
+  }, [overlaySvgPath, debugUv, placement?.rotation_deg, placement?.scale, placement?.seamX_mm, placement?.wrapEnabled, uvTransform, wrapWidthMm]);
 
   useEffect(() => {
     const texture = previousTextureRef.current;
     if (!texture) return;
 
-    const seamShift = placement?.wrapEnabled && wrapWidthMm && wrapWidthMm > 0 ? (placement.seamX_mm ?? 0) / wrapWidthMm : 0;
-    const rotationDeg = placement?.rotation_deg ?? 0;
-    const snappedRotationDeg = Math.round(rotationDeg / 90) * 90;
-    const scale = Math.max(placement?.scale ?? 1, 0.15);
-    const baseRotationDeg = uvTransform?.rotateDeg ?? 0;
-    const flipU = uvTransform?.flipU ? -1 : 1;
-    const flipV = uvTransform?.flipV ? -1 : 1;
-    const uOffset = uvTransform?.uOffset ?? 0;
-    const vOffset = uvTransform?.vOffset ?? 0;
-
-    texture.center.set(0.5, 0.5);
-    texture.rotation = THREE.MathUtils.degToRad(baseRotationDeg + snappedRotationDeg);
-    texture.repeat.set((1 / scale) * flipU, flipV);
-    texture.offset.set(THREE.MathUtils.euclideanModulo(-seamShift + uOffset, 1), vOffset);
-    texture.needsUpdate = true;
+    applyWrapTextureTransform(texture, {
+      rotateDeg: placement?.rotation_deg ?? 0,
+      seamX: placement?.seamX_mm ?? 0,
+      wrapEnabled: placement?.wrapEnabled,
+      wrapWidthMm,
+      scale: placement?.scale ?? 1,
+      uvTransform
+    });
   }, [placement?.rotation_deg, placement?.scale, placement?.seamX_mm, placement?.wrapEnabled, wrapWidthMm, uvTransform]);
 
   useFrame(() => {
