@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { BedLayout, DesignAsset, DesignJob, JobStatus, Placement, ProductionConfig } from "@/core/v2/types";
 import { objectPresets } from "@/core/v2/presets";
+import { generateLightBurnSvg } from "@/core/export/lightburnSvg";
 import { atomicWriteJson, ensureDir, jobsRoot, readJsonFile, recordsRoot, withFsRetries } from "@/lib/v2/storage";
 
 const uploadsRoot = path.join(process.cwd(), "public", "uploads", "v2");
@@ -165,13 +166,20 @@ export async function generateV2Artifacts(jobId: string) {
   const job = await getV2Job(jobId);
   if (!job) return null;
   const destination = resolveJobDestination(job);
+  const object = objectPresets.find((item) => item.id === job.objectDefinitionId) ?? objectPresets[0];
   await ensureDir(destination);
   const packet = {
     job,
     generatedAt: nowIso(),
     destination,
     productionConfig: job.productionConfig as ProductionConfig | undefined,
-    templateGblPath: job.templateGblPath
+    templateGblPath: job.templateGblPath,
+    exports: {
+      lightburn: {
+        origin: "top-left",
+        mode: object.type === "cylinder" ? "unwrap-2d-rotary" : "flat-bed"
+      }
+    }
   };
   await atomicWriteJson(path.join(destination, "job.json"), packet);
 
@@ -181,12 +189,32 @@ export async function generateV2Artifacts(jobId: string) {
   const bedSvg = `<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"600\"><rect width=\"100%\" height=\"100%\" fill=\"#0b1220\"/><text x=\"24\" y=\"40\" fill=\"#9fb3d1\">Bed Layout ${job.id}</text></svg>`;
   await withFsRetries(() => fs.writeFile(path.join(destination, "bed.svg"), bedSvg, "utf8"));
 
+  const asset = await getV2Asset(job.id, job.assetId);
+  const sourceSvg = asset?.originalSvgPath ? await readJsonOrText(asset.originalSvgPath) : "";
+  const lightburnSvg = generateLightBurnSvg({
+    svgString: sourceSvg || `<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\" viewBox=\"0 0 100 100\"><path d=\"M0 0 L100 0 L100 100 L0 100 Z\" stroke=\"#000\" fill=\"none\"/></svg>`,
+    placement: job.placement,
+    objectDefinition: object,
+    bedLayout: job.bedLayout,
+    origin: "top-left"
+  });
+  await withFsRetries(() => fs.writeFile(path.join(destination, "lightburn_import.svg"), lightburnSvg, "utf8"));
+
   return {
     destination,
     artifacts: {
       jobJson: path.join(destination, "job.json"),
       proof: path.join(destination, "proof.svg"),
-      bed: path.join(destination, "bed.svg")
+      bed: path.join(destination, "bed.svg"),
+      lightburnImport: path.join(destination, "lightburn_import.svg")
     }
   };
+}
+
+async function readJsonOrText(filePath: string) {
+  try {
+    return await withFsRetries(() => fs.readFile(filePath, "utf8"));
+  } catch {
+    return "";
+  }
 }

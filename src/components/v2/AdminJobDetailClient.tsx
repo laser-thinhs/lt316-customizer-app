@@ -435,7 +435,7 @@ export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
           <li key={key} className="rounded border p-2">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <p className="font-medium">{key === "jobJson" ? "job.json" : key === "proof" ? "proof.svg" : "bed.svg"}</p>
+                <p className="font-medium">{key === "jobJson" ? "job.json" : key === "proof" ? "proof.svg" : key === "bed" ? "bed.svg" : "lightburn_import.svg"}</p>
                 <p className="break-all text-xs text-slate-600">{value}</p>
               </div>
               <button className="shrink-0 rounded border px-2 py-1 text-xs" onClick={() => void copyPath(key, value)}>{copyState === key ? "Copied" : "Copy"}</button>
