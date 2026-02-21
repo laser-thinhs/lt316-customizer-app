@@ -21,6 +21,13 @@ export type YetiTemplateStyle = {
   height_mm: number;
   diameter_mm: number;
   meshPath: string;
+  uvTransform?: {
+    rotateDeg?: 0 | 90 | 180 | 270;
+    flipU?: boolean;
+    flipV?: boolean;
+    uOffset?: number;
+    vOffset?: number;
+  };
   colors: YetiTemplateColor[];
   designs: YetiTemplateDesign[];
 };

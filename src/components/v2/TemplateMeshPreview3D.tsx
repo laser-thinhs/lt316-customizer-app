@@ -8,6 +8,14 @@ import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { loadSvgTextureFromPath } from "@/lib/rendering/svgTexture";
 import type { Placement } from "@/core/v2/types";
 
+type UvTransform = {
+  rotateDeg?: 0 | 90 | 180 | 270;
+  flipU?: boolean;
+  flipV?: boolean;
+  uOffset?: number;
+  vOffset?: number;
+};
+
 type Props = {
   meshPath: string;
   overlaySvgPath?: string;
@@ -16,6 +24,8 @@ type Props = {
   colorId?: string;
   placement?: Placement;
   wrapWidthMm?: number;
+  uvTransform?: UvTransform;
+  debugUv?: boolean;
 };
 
 type PathState = "checking" | "ready" | "missing";
@@ -98,7 +108,7 @@ function SceneCamera({ focus, radius }: { focus: THREE.Vector3; radius: number }
   return null;
 }
 
-function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wrapWidthMm }: Props) {
+function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wrapWidthMm, uvTransform, debugUv }: Props) {
   const { scene } = useGLTF(meshPath);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const labelRef = useRef<THREE.Mesh>(null);
@@ -130,7 +140,7 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
 
     const applyOverlay = async () => {
       try {
-        const texture = await loadSvgTextureFromPath(overlaySvgPath);
+        const texture = await loadSvgTextureFromPath(overlaySvgPath, { enabled: debugUv });
         if (cancelled || !labelRef.current) {
           texture.dispose();
           return;
@@ -154,20 +164,27 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
     return () => {
       cancelled = true;
     };
-  }, [overlaySvgPath]);
+  }, [overlaySvgPath, debugUv]);
 
   useEffect(() => {
     const texture = previousTextureRef.current;
     if (!texture) return;
 
-    const seamShift = wrapWidthMm && wrapWidthMm > 0 ? (placement?.seamX_mm ?? 0) / wrapWidthMm : 0;
-    const rotationShift = (placement?.rotation_deg ?? 0) / 360;
+    const seamShift = placement?.wrapEnabled && wrapWidthMm && wrapWidthMm > 0 ? (placement.seamX_mm ?? 0) / wrapWidthMm : 0;
+    const rotationDeg = placement?.rotation_deg ?? 0;
     const scale = Math.max(placement?.scale ?? 1, 0.15);
+    const baseRotationDeg = uvTransform?.rotateDeg ?? 0;
+    const flipU = uvTransform?.flipU ? -1 : 1;
+    const flipV = uvTransform?.flipV ? -1 : 1;
+    const uOffset = uvTransform?.uOffset ?? 0;
+    const vOffset = uvTransform?.vOffset ?? 0;
 
-    texture.repeat.set(1 / scale, 1);
-    texture.offset.set((seamShift + rotationShift) % 1, 0);
+    texture.center.set(0.5, 0.5);
+    texture.rotation = THREE.MathUtils.degToRad(baseRotationDeg + rotationDeg);
+    texture.repeat.set((1 / scale) * flipU, flipV);
+    texture.offset.set(THREE.MathUtils.euclideanModulo(-seamShift + uOffset, 1), vOffset);
     texture.needsUpdate = true;
-  }, [placement?.rotation_deg, placement?.scale, placement?.seamX_mm, wrapWidthMm]);
+  }, [placement?.rotation_deg, placement?.scale, placement?.seamX_mm, placement?.wrapEnabled, wrapWidthMm, uvTransform]);
 
   useFrame(() => {
     controlsRef.current?.update();
@@ -223,7 +240,7 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
   );
 }
 
-export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, className, colorHex, colorId, placement, wrapWidthMm }: Props) {
+export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, className, colorHex, colorId, placement, wrapWidthMm, uvTransform, debugUv }: Props) {
   const [pathState, setPathState] = useState<PathState>("checking");
 
   useEffect(() => {
@@ -273,6 +290,8 @@ export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, classN
             colorId={colorId}
             placement={placement}
             wrapWidthMm={wrapWidthMm}
+            uvTransform={uvTransform}
+            debugUv={debugUv}
           />
         </Suspense>
       </Canvas>

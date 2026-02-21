@@ -41,6 +41,7 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
   const [selectedColorId, setSelectedColorId] = useState<string>("");
   const [submitState, setSubmitState] = useState<"idle" | "submitting" | "submitted" | "error">("idle");
   const [submitMessage, setSubmitMessage] = useState<string>("");
+  const [debugUv, setDebugUv] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -375,12 +376,18 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
                       colorHex={selectedColor?.hex}
                       placement={placement}
                       wrapWidthMm={width}
+                      uvTransform={selectedStyle?.uvTransform}
+                      debugUv={debugUv}
                       className="h-full w-full"
                     />
                   ) : (
                     <div className="text-center text-sm">No mesh selected.</div>
                   )}
                 </div>
+                <label className="mt-2 flex items-center justify-center gap-2 text-xs text-slate-600">
+                  <input type="checkbox" checked={debugUv} onChange={(e) => setDebugUv(e.target.checked)} />
+                  Debug UV
+                </label>
                 <div className="mt-2 text-center text-xs text-slate-600">Color: {selectedColor?.label ?? job.colorId ?? "n/a"} · Design: {job.templatePreviewSvgPath ?? "upload only"}</div>
               </div>
             </div>
