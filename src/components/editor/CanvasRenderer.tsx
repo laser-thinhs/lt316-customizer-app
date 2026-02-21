@@ -82,9 +82,8 @@ export default function CanvasRenderer({
           if (asset.svgContent) {
             const parser = new DOMParser();
             const doc = parser.parseFromString(asset.svgContent, "image/svg+xml");
-            if (doc.documentElement.tagName === "svg") {
-              const svgEl = doc.documentElement as SVGSVGElement;
-              svgs[asset.id] = svgEl;
+            if (doc.documentElement.tagName === "svg" && doc.documentElement instanceof SVGSVGElement) {
+              svgs[asset.id] = doc.documentElement;
             }
           }
         }

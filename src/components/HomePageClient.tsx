@@ -13,6 +13,33 @@ import {
 } from "@/schemas/api";
 import { createDefaultPlacementDocument } from "@/schemas/placement";
 
+type YetiTemplateStyle = {
+  id: string;
+  label: string;
+  meshPath: string;
+};
+
+function parseOunceToken(value: string | undefined | null) {
+  if (!value) return null;
+  const match = value.match(/(\d+)\s*oz/i);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveYetiMeshPath(styles: YetiTemplateStyle[], sku?: string) {
+  if (!styles.length) return null;
+  const skuOz = parseOunceToken(sku);
+  if (skuOz !== null) {
+    const exact = styles.find((style) => {
+      const styleOz = parseOunceToken(`${style.label} ${style.id}`);
+      return styleOz === skuOz;
+    });
+    if (exact?.meshPath) return exact.meshPath;
+  }
+  return styles[0].meshPath ?? null;
+}
+
 const machine = {
   id: "fiber-galvo-300-lens-default",
   name: "Fiber Galvo 300 Lens",
@@ -26,6 +53,8 @@ export default function HomePageClient() {
   const [isLoadingProducts, setLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isDbUnavailable, setDbUnavailable] = useState(false);
+  const [yetiStyles, setYetiStyles] = useState<YetiTemplateStyle[]>([]);
 
   const { isCreatingJob, setCreatingJob } = useUIStore();
 
@@ -40,6 +69,7 @@ export default function HomePageClient() {
     () => resolvedSelectedProductId.startsWith("dev-"),
     [resolvedSelectedProductId]
   );
+  const isDbOfflineMode = isDbFallbackMode || isDbUnavailable;
 
   useEffect(() => {
     (async () => {
@@ -73,6 +103,24 @@ export default function HomePageClient() {
     })();
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/templates/yeti");
+        if (!res.ok) return;
+        const payload = await res.json() as { data?: { styles?: YetiTemplateStyle[] } };
+        setYetiStyles(Array.isArray(payload.data?.styles) ? payload.data.styles : []);
+      } catch {
+        setYetiStyles([]);
+      }
+    })();
+  }, []);
+
+  const resolvedModelGlbPath = useMemo(
+    () => resolveYetiMeshPath(yetiStyles, job?.productProfile?.sku),
+    [yetiStyles, job?.productProfile?.sku]
+  );
+
   const createJob = async () => {
     const productProfileId = resolvedSelectedProductId;
 
@@ -81,7 +129,7 @@ export default function HomePageClient() {
       return;
     }
 
-    if (isDbFallbackMode) {
+    if (isDbOfflineMode) {
       setError("Database is offline. Start PostgreSQL (docker compose up -d db) to create jobs.");
       return;
     }
@@ -102,8 +150,13 @@ export default function HomePageClient() {
 
       const json: unknown = await res.json();
       if (!res.ok) {
+        const apiError = (json as { error?: { message?: string; code?: string } })?.error;
+        if (res.status === 503 || apiError?.code === "DATABASE_UNAVAILABLE") {
+          setDbUnavailable(true);
+          throw new Error("Database is offline. Start PostgreSQL (docker compose up -d db) to create jobs.");
+        }
         throw new Error(
-          (json as { error?: { message?: string } })?.error?.message || "Failed to create job"
+          apiError?.message || "Failed to create job"
         );
       }
 
@@ -149,7 +202,7 @@ export default function HomePageClient() {
                 !resolvedSelectedProductId ||
                 isLoadingProducts ||
                 Boolean(productsError) ||
-                isDbFallbackMode
+                isDbOfflineMode
               }
               className="
                 w-full rounded-md border border-fuchsia-300/45 bg-fuchsia-600/70 px-4 py-2
@@ -157,7 +210,7 @@ export default function HomePageClient() {
                 disabled:cursor-not-allowed disabled:opacity-60
               "
             >
-              {isDbFallbackMode
+              {isDbOfflineMode
                 ? "Database Offline - Start DB"
                 : isCreatingJob
                   ? "Creating Job..."
@@ -165,7 +218,7 @@ export default function HomePageClient() {
             </button>
 
             {error && <p className="text-sm text-rose-300">{error}</p>}
-            {isDbFallbackMode && !error ? (
+            {isDbOfflineMode && !error ? (
               <p className="text-sm text-amber-300">Start PostgreSQL to enable job creation.</p>
             ) : null}
           </div>
@@ -200,6 +253,9 @@ export default function HomePageClient() {
           <PlacementEditor
             designJobId={job.id}
             placement={job.placementJson}
+            modelImageUrl={job.previewImagePath ?? undefined}
+            modelMaskUrl={job.previewMaskImagePath ?? job.productProfile.toolOutlineSvgPath ?? undefined}
+            modelGlbPath={resolvedModelGlbPath ?? undefined}
             onUpdated={(placementJson) => setJob((prev) => (prev ? { ...prev, placementJson } : prev))}
           />
         )}

@@ -1,29 +1,10 @@
 /** @jest-environment jsdom */
 
 import React from "react";
-import { act } from "react-dom/test-utils";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
 import PlacementEditor from "@/components/PlacementEditor";
 import { createDefaultPlacementDocument } from "@/schemas/placement";
-
-// Suppress act() warnings for this test: PlacementEditor intentionally updates state
-// in effects triggered by event handlers, which bypasses strict act() boundaries.
-// This is acceptable in production but caught by test libraries. We use a jest spy
-// to suppress these specific warnings.
-const originalError = console.error;
-beforeAll(() => {
-  console.error = (...args: unknown[]) => {
-    const message = String(args[0] ?? "");
-    if (message.includes("The current testing environment is not configured to support act(...)")) {
-      return;
-    }
-    originalError.call(console, ...args);
-  };
-});
-
-afterAll(() => {
-  console.error = originalError;
-});
 
 describe("PlacementEditor text workflow", () => {
   it("adds curved text, updates controls, converts outline and persists", async () => {

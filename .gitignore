@@ -39,3 +39,7 @@ storage/
 
 .vercel
 .env*.local
+
+# Runtime generated artifacts
+/data/
+/public/uploads/v2/

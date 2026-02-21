@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Props = {
   diameterMm?: number | null;
   heightMm?: number | null;
   designParams?: any;
+  secondaryDesignParams?: any;
+  designSvgUrl?: string | null;
   rotationDeg?: number | null;
   offsetYMm?: number | null;
   engraveZoneHeightMm?: number | null;
@@ -17,6 +19,8 @@ export default function TumblerPreview3D({
   diameterMm = 76.2,
   heightMm = 100,
   designParams,
+  secondaryDesignParams,
+  designSvgUrl,
   rotationDeg = 0,
   offsetYMm = 0,
   engraveZoneHeightMm = 100,
@@ -27,41 +31,45 @@ export default function TumblerPreview3D({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string>("");
+  const resolvedDesignParams = useMemo(
+    () => (designSvgUrl ? { ...(designParams ?? {}), assetUrl: designSvgUrl } : designParams),
+    [designParams, designSvgUrl]
+  );
+  const designLayers = useMemo(
+    () => [resolvedDesignParams, secondaryDesignParams].filter((layer) => Boolean(layer?.assetUrl)),
+    [resolvedDesignParams, secondaryDesignParams]
+  );
 
-  // Ensure all values are valid numbers
   const safeDiameterMm = typeof diameterMm === "number" && isFinite(diameterMm) ? diameterMm : 76.2;
   const safeHeightMm = typeof heightMm === "number" && isFinite(heightMm) ? heightMm : 100;
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
 
     const initThree = async () => {
       try {
         setIsLoading(true);
-        setDebugInfo(`Initializing... designParams: ${JSON.stringify(designParams)}`);
+        setDebugInfo(`Initializing... designParams: ${JSON.stringify(resolvedDesignParams)}`);
         
-        // Dynamically import Three.js
         const THREE = await import("three");
 
-        // Scene setup
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x1a1a2e);
 
-        // Camera
-        const width = containerRef.current!.clientWidth;
-        const height = containerRef.current!.clientHeight;
-        const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-        camera.position.set(0, 0, 250);
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 1000);
+        camera.position.set(0, 30, 120);
         camera.lookAt(0, 0, 0);
 
-        // Renderer
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(width, height);
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.shadowMap.enabled = true;
-        containerRef.current.appendChild(renderer.domElement);
+        container.innerHTML = "";
+        container.appendChild(renderer.domElement);
 
-        // Lights
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
         scene.add(ambientLight);
 
@@ -74,13 +82,13 @@ export default function TumblerPreview3D({
         pointLight.position.set(-150, 100, 150);
         scene.add(pointLight);
 
-        // Cylinder
         const radiusMm = safeDiameterMm / 2;
         const circumMm = radiusMm * 2 * Math.PI;
-        const mmScale = 3;
+        const mmScale = typeof resolvedDesignParams?.mmScale === "number" && isFinite(resolvedDesignParams.mmScale)
+          ? resolvedDesignParams.mmScale
+          : 3;
         const geometry = new THREE.CylinderGeometry(radiusMm, radiusMm, safeHeightMm, 64, 32);
 
-        // Create texture canvas
         const canvas = document.createElement("canvas");
         canvas.width = Math.ceil(circumMm * mmScale);
         canvas.height = Math.ceil(safeHeightMm * mmScale);
@@ -88,53 +96,49 @@ export default function TumblerPreview3D({
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("Failed to get canvas context");
 
-        // White background
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Draw image if available
-        if (designParams?.assetUrl) {
-          setDebugInfo(`Loading image from: ${designParams.assetUrl}`);
-          
-          const img = new Image();
-          img.crossOrigin = "anonymous";
-          
-          await new Promise<void>((resolve, reject) => {
-            img.onload = () => {
-              setDebugInfo(`Image loaded successfully: ${img.width}x${img.height}`);
-              
-              const x = (designParams.xMm || 0) * mmScale;
-              const y = (designParams.yMm || 0) * mmScale;
-              const w = (designParams.widthMm || 100) * mmScale;
-              const h = (designParams.heightMm || 100) * mmScale;
-              const rot = ((designParams.rotationDeg || 0) * Math.PI) / 180;
+        if (designLayers.length) {
+          setDebugInfo(`Loading ${designLayers.length} artwork layer(s)`);
 
-              ctx.save();
-              ctx.globalAlpha = designParams.opacity || 1;
+          for (const layer of designLayers) {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
 
-              // Rotate around center
-              const centerX = x + w / 2;
-              const centerY = y + h / 2;
-              ctx.translate(centerX, centerY);
-              ctx.rotate(rot);
-              ctx.translate(-centerX, -centerY);
+            await new Promise<void>((resolve, reject) => {
+              img.onload = () => {
+                const x = (layer.xMm || 0) * mmScale;
+                const y = (layer.yMm ?? offsetYMm ?? 0) * mmScale;
+                const w = (layer.widthMm || 100) * mmScale;
+                const h = (layer.heightMm || 100) * mmScale;
+                const rot = (((layer.rotationDeg ?? rotationDeg ?? 0) * Math.PI) / 180);
 
-              ctx.drawImage(img, x, y, w, h);
-              ctx.restore();
-              
-              resolve();
-            };
-            img.onerror = (err) => {
-              setDebugInfo(`Image load error: ${err}`);
-              reject(new Error("Failed to load image"));
-            };
-            img.src = designParams.assetUrl;
-          });
+                ctx.save();
+                ctx.globalAlpha = layer.opacity || 1;
+
+                const centerX = x + w / 2;
+                const centerY = y + h / 2;
+                ctx.translate(centerX, centerY);
+                ctx.rotate(rot);
+                ctx.translate(-centerX, -centerY);
+
+                ctx.drawImage(img, x, y, w, h);
+                ctx.restore();
+
+                resolve();
+              };
+              img.onerror = (err) => {
+                setDebugInfo(`Image load error: ${err}`);
+                reject(new Error("Failed to load image"));
+              };
+              img.src = layer.assetUrl;
+            });
+          }
         } else {
           setDebugInfo("No asset URL provided");
         }
 
-        // Draw seam lines
         ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
         ctx.lineWidth = 2;
         ctx.setLineDash([4, 4]);
@@ -148,7 +152,6 @@ export default function TumblerPreview3D({
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Draw grid for reference
         ctx.strokeStyle = "rgba(200, 200, 200, 0.2)";
         ctx.lineWidth = 1;
         const gridSpacing = 20 * mmScale;
@@ -159,7 +162,6 @@ export default function TumblerPreview3D({
           ctx.stroke();
         }
 
-        // Apply texture
         const texture = new THREE.CanvasTexture(canvas);
         texture.magFilter = THREE.LinearFilter;
         texture.minFilter = THREE.LinearFilter;
@@ -175,7 +177,6 @@ export default function TumblerPreview3D({
         cylinder.receiveShadow = true;
         scene.add(cylinder);
 
-        // Ground
         const groundGeometry = new THREE.PlaneGeometry(600, 600);
         const groundMaterial = new THREE.ShadowMaterial({ opacity: 0.3 });
         const ground = new THREE.Mesh(groundGeometry, groundMaterial);
@@ -184,7 +185,6 @@ export default function TumblerPreview3D({
         ground.receiveShadow = true;
         scene.add(ground);
 
-        // Mouse state
         let isDown = false;
         let startX = 0;
         let startY = 0;
@@ -192,9 +192,8 @@ export default function TumblerPreview3D({
         let rotY = 0;
         let targetRotX = 0;
         let targetRotY = 0;
-        let zoom = 250;
+        let zoom = 120;
 
-        // Mouse events
         const onMouseDown = (e: MouseEvent) => {
           isDown = true;
           startX = e.clientX;
@@ -219,8 +218,8 @@ export default function TumblerPreview3D({
 
         const onWheel = (e: WheelEvent) => {
           e.preventDefault();
-          zoom += (e.deltaY > 0 ? 1 : -1) * 15;
-          zoom = Math.max(100, Math.min(600, zoom));
+          zoom += (e.deltaY > 0 ? 1 : -1) * 8;
+          zoom = Math.max(50, Math.min(250, zoom));
         };
 
         const onMouseEnter = () => {
@@ -239,13 +238,12 @@ export default function TumblerPreview3D({
         renderer.domElement.addEventListener("mouseenter", onMouseEnter);
         renderer.domElement.addEventListener("mouseleave", onMouseLeave);
 
-        // Animation loop
         const animate = () => {
           requestAnimationFrame(animate);
 
           rotX += (targetRotX - rotX) * 0.15;
           rotY += (targetRotY - rotY) * 0.15;
-          rotX = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, rotX));
+          rotX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, rotX));
 
           cylinder.rotation.x = rotX;
           cylinder.rotation.y = rotY;
@@ -255,7 +253,6 @@ export default function TumblerPreview3D({
         };
         animate();
 
-        // Resize handler
         const handleResize = () => {
           if (!containerRef.current) return;
           const newWidth = containerRef.current.clientWidth;
@@ -295,7 +292,7 @@ export default function TumblerPreview3D({
     };
 
     initThree();
-  }, [safeDiameterMm, safeHeightMm, designParams]);
+  }, [safeDiameterMm, safeHeightMm, resolvedDesignParams, designLayers, textureReloadKey, rotationDeg, offsetYMm]);
 
   if (error) {
     return (
