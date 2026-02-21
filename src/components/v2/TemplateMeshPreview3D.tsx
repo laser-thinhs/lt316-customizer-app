@@ -16,6 +16,7 @@ type Props = {
   colorId?: string;
   placement?: Placement;
   wrapWidthMm?: number;
+  debug?: boolean;
 };
 
 type PathState = "checking" | "ready" | "missing";
@@ -54,6 +55,19 @@ function fitBody(sceneObject: THREE.Object3D): BodyFit {
   };
 }
 
+function findWrapMesh(root: THREE.Object3D): THREE.Mesh | null {
+  let result: THREE.Mesh | null = null;
+  root.traverse((node) => {
+    if (result) return;
+    if (!(node instanceof THREE.Mesh)) return;
+    const nameLower = node.name.toLowerCase();
+    if (nameLower.includes("wrap") || nameLower.includes("label") || nameLower.includes("decal")) {
+      result = node;
+    }
+  });
+  return result;
+}
+
 function configureBodyMaterials(root: THREE.Object3D, color: THREE.Color) {
   root.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return;
@@ -65,14 +79,22 @@ function configureBodyMaterials(root: THREE.Object3D, color: THREE.Color) {
       const lowered = `${node.name} ${material.name}`.toLowerCase();
       const isLid = lowered.includes("lid") || lowered.includes("cap");
       const isBody = lowered.includes("body") || lowered.includes("shell") || lowered.includes("cup") || lowered.includes("wraparea");
+      const isWrap = lowered.includes("wrap") || lowered.includes("label") || lowered.includes("decal");
 
-      if (isBody || !isLid) {
+      // Skip wrap meshes when applying body color
+      if (isWrap) {
+        material.color = new THREE.Color("#ffffff");
+        material.metalness = 0.08;
+        material.roughness = 0.58;
+        material.transparent = true;
+        material.side = THREE.DoubleSide;
+      } else if (isBody || !isLid) {
         material.color = color.clone();
         material.metalness = 0.42;
         material.roughness = 0.34;
       }
 
-      if (isLid) {
+      if (isLid && !isWrap) {
         material.metalness = 0.18;
         material.roughness = 0.6;
       }
@@ -98,11 +120,11 @@ function SceneCamera({ focus, radius }: { focus: THREE.Vector3; radius: number }
   return null;
 }
 
-function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wrapWidthMm }: Props) {
+function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wrapWidthMm, debug }: Props) {
   const { scene } = useGLTF(meshPath);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
-  const labelRef = useRef<THREE.Mesh>(null);
   const previousTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const debugRef = useRef<{ wrapMesh: THREE.Mesh | null }>({ wrapMesh: null });
 
   const cloned = useMemo(() => scene.clone(true), [scene]);
   const bodyColor = useMemo(() => resolveColor(colorId, colorHex), [colorId, colorHex]);
@@ -110,18 +132,27 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
 
   useEffect(() => {
     configureBodyMaterials(cloned, bodyColor);
-  }, [cloned, bodyColor]);
+    // Find or create wrap mesh
+    const existing = findWrapMesh(cloned);
+    if (!existing && debug) {
+      console.warn("[3D Preview] No wrap mesh found in loaded model");
+    }
+    debugRef.current.wrapMesh = existing;
+  }, [cloned, bodyColor, debug]);
 
   useEffect(() => {
-    if (!overlaySvgPath || !labelRef.current) {
+    const wrapMesh = debugRef.current.wrapMesh;
+    if (!overlaySvgPath || !wrapMesh) {
       if (previousTextureRef.current) {
         previousTextureRef.current.dispose();
         previousTextureRef.current = null;
       }
-      const labelMaterial = labelRef.current?.material;
-      if (labelMaterial instanceof THREE.MeshStandardMaterial) {
-        labelMaterial.map = null;
-        labelMaterial.needsUpdate = true;
+      const materials = Array.isArray(wrapMesh?.material) ? wrapMesh.material : [wrapMesh?.material];
+      for (const material of materials) {
+        if (material instanceof THREE.MeshStandardMaterial) {
+          material.map = null;
+          material.needsUpdate = true;
+        }
       }
       return;
     }
@@ -130,8 +161,9 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
 
     const applyOverlay = async () => {
       try {
+        if (debug) console.log("[3D Preview] Loading texture from:", overlaySvgPath);
         const texture = await loadSvgTextureFromPath(overlaySvgPath);
-        if (cancelled || !labelRef.current) {
+        if (cancelled || !wrapMesh) {
           texture.dispose();
           return;
         }
@@ -139,14 +171,18 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
         if (previousTextureRef.current) previousTextureRef.current.dispose();
         previousTextureRef.current = texture;
 
-        const labelMaterial = labelRef.current.material;
-        if (labelMaterial instanceof THREE.MeshStandardMaterial) {
-          labelMaterial.map = texture;
-          labelMaterial.transparent = true;
-          labelMaterial.alphaTest = 0.03;
-          labelMaterial.needsUpdate = true;
+        const materials = Array.isArray(wrapMesh.material) ? wrapMesh.material : [wrapMesh.material];
+        for (const material of materials) {
+          if (material instanceof THREE.MeshStandardMaterial) {
+            material.map = texture;
+            material.transparent = true;
+            material.alphaTest = 0.03;
+            material.needsUpdate = true;
+            if (debug) console.log("[3D Preview] Texture applied to wrap mesh");
+          }
         }
-      } catch {
+      } catch (error) {
+        if (debug) console.error("[3D Preview] Failed to load texture:", error);
       }
     };
 
@@ -154,7 +190,7 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
     return () => {
       cancelled = true;
     };
-  }, [overlaySvgPath]);
+  }, [overlaySvgPath, debug]);
 
   useEffect(() => {
     const texture = previousTextureRef.current;
@@ -167,7 +203,17 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
     texture.repeat.set(1 / scale, 1);
     texture.offset.set((seamShift + rotationShift) % 1, 0);
     texture.needsUpdate = true;
-  }, [placement?.rotation_deg, placement?.scale, placement?.seamX_mm, wrapWidthMm]);
+
+    if (debug) {
+      console.log("[3D Preview] Texture UV updated", {
+        seamShift: seamShift.toFixed(3),
+        rotationShift: rotationShift.toFixed(3),
+        scale: scale.toFixed(2),
+        repeatU: (1 / scale).toFixed(2),
+        offsetU: ((seamShift + rotationShift) % 1).toFixed(3)
+      });
+    }
+  }, [placement?.rotation_deg, placement?.scale, placement?.seamX_mm, wrapWidthMm, debug]);
 
   useFrame(() => {
     controlsRef.current?.update();
@@ -193,15 +239,6 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
 
       <primitive object={cloned} />
 
-      <mesh
-        ref={labelRef}
-        position={[fit.center.x, fit.center.y, fit.center.z]}
-        rotation={[0, Math.PI, 0]}
-      >
-        <cylinderGeometry args={[fit.bodyRadius * 1.014, fit.bodyRadius * 1.008, fit.bodyHeight, 96, 1, true]} />
-        <meshStandardMaterial color="#ffffff" metalness={0.08} roughness={0.58} transparent opacity={0.98} side={THREE.DoubleSide} />
-      </mesh>
-
       <ContactShadows position={[fit.center.x, fit.center.y - fit.bodyHeight * 0.62, fit.center.z]} opacity={0.5} blur={2.8} scale={fit.bodyRadius * 5.5} far={2.2} />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[fit.center.x, fit.center.y - fit.bodyHeight * 0.64, fit.center.z]}>
         <planeGeometry args={[8, 8]} />
@@ -223,20 +260,32 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
   );
 }
 
-export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, className, colorHex, colorId, placement, wrapWidthMm }: Props) {
+export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, className, colorHex, colorId, placement, wrapWidthMm, debug }: Props) {
   const [pathState, setPathState] = useState<PathState>("checking");
+  const [textureError, setTextureError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     const verify = async () => {
       setPathState("checking");
+      setTextureError(null);
       try {
         const response = await fetch(meshPath, { method: "HEAD" });
         if (cancelled) return;
-        setPathState(response.ok ? "ready" : "missing");
-      } catch {
-        if (!cancelled) setPathState("missing");
+        if (response.ok) {
+          setPathState("ready");
+          if (debug) console.log("[3D Preview] Mesh loaded:", meshPath);
+        } else {
+          setPathState("missing");
+          setTextureError(`Mesh returned ${response.status}`);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPathState("missing");
+          setTextureError(error instanceof Error ? error.message : "Unknown error");
+          if (debug) console.error("[3D Preview] Mesh load error:", error);
+        }
       }
     };
 
@@ -244,14 +293,19 @@ export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, classN
     return () => {
       cancelled = true;
     };
-  }, [meshPath]);
+  }, [meshPath, debug]);
 
   if (pathState === "checking") {
     return <div className={`flex h-full w-full items-center justify-center text-xs text-slate-200 ${className ?? ""}`.trim()}>Loading 3D model…</div>;
   }
 
   if (pathState === "missing") {
-    return <div className={`flex h-full w-full items-center justify-center px-4 text-center text-xs text-amber-200 ${className ?? ""}`.trim()}>Model not found at {meshPath}</div>;
+    return (
+      <div className={`flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center text-xs text-amber-200 ${className ?? ""}`.trim()}>
+        <div>Model not found</div>
+        <div className="text-xs text-amber-300">{textureError || meshPath}</div>
+      </div>
+    );
   }
 
   return (
@@ -273,6 +327,7 @@ export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, classN
             colorId={colorId}
             placement={placement}
             wrapWidthMm={wrapWidthMm}
+            debug={debug}
           />
         </Suspense>
       </Canvas>
