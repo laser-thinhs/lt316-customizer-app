@@ -16,8 +16,8 @@ function normalizeRotation(deg: number) {
   return normalized === -180 ? 180 : normalized;
 }
 
-function snapTo45(deg: number) {
-  return Math.round(deg / 45) * 45;
+function snapTo90(deg: number) {
+  return Math.round(deg / 90) * 90;
 }
 
 function buildTemplateObject(style: YetiTemplateStyle) {
@@ -159,9 +159,9 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
     setJob((prev) => (prev ? { ...prev, placement: nextPlacement } : prev));
   }
 
-  function rotateByStep(step: -45 | 45) {
+  function rotateByQuarter(step: -90 | 90) {
     if (!placement) return;
-    const snapped = snapTo45(placement.rotation_deg);
+    const snapped = snapTo90(placement.rotation_deg);
     const next = { ...placement, rotation_deg: normalizeRotation(snapped + step) };
     setLocalPlacement(next);
     scheduleSave(next);
@@ -330,13 +330,24 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
                       }} />
                     </label>
                     <div className="flex items-center gap-2">
-                      <button type="button" className="rounded border px-2 py-0.5 text-xs" onClick={() => rotateByStep(-45)} aria-label="Rotate left 45 degrees">
-                        ↶ 45°
+                      <button type="button" className="rounded border px-2 py-0.5 text-xs" onClick={() => rotateByQuarter(-90)} aria-label="Rotate left 90 degrees">
+                        ↶ 90°
                       </button>
-                      <button type="button" className="rounded border px-2 py-0.5 text-xs" onClick={() => rotateByStep(45)} aria-label="Rotate right 45 degrees">
-                        ↷ 45°
+                      <button type="button" className="rounded border px-2 py-0.5 text-xs" onClick={() => rotateByQuarter(90)} aria-label="Rotate right 90 degrees">
+                        ↷ 90°
                       </button>
-                      <span className="text-xs text-slate-500">Snaps to 45°</span>
+                      <button
+                        type="button"
+                        className="rounded border px-2 py-0.5 text-xs"
+                        onClick={() => {
+                          const next = { ...placement, rotation_deg: normalizeRotation(snapTo90(placement.rotation_deg)) };
+                          setLocalPlacement(next);
+                          scheduleSave(next);
+                        }}
+                      >
+                        Snap 90°
+                      </button>
+                      <span className="text-xs text-slate-500">Snaps to 90°</span>
                     </div>
                   </div>
                   <label>Wrap <input type="checkbox" checked={placement.wrapEnabled} onChange={(e) => {
