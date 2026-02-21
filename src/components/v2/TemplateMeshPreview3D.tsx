@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows, Environment, OrbitControls, useGLTF } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { loadSvgTextureFromPath } from "@/lib/rendering/svgTexture";
+import { applyWrapTextureTransform, buildWrapTexture, type WrapUvTransform } from "@/lib/rendering/svgTexture";
 import type { Placement } from "@/core/v2/types";
 
 type Props = {
@@ -16,7 +16,8 @@ type Props = {
   colorId?: string;
   placement?: Placement;
   wrapWidthMm?: number;
-  debug?: boolean;
+  uvTransform?: WrapUvTransform;
+  debugUv?: boolean;
 };
 
 type PathState = "checking" | "ready" | "missing";
@@ -81,7 +82,6 @@ function configureBodyMaterials(root: THREE.Object3D, color: THREE.Color) {
       const isBody = lowered.includes("body") || lowered.includes("shell") || lowered.includes("cup") || lowered.includes("wraparea");
       const isWrap = lowered.includes("wrap") || lowered.includes("label") || lowered.includes("decal");
 
-      // Skip wrap meshes when applying body color
       if (isWrap) {
         material.color = new THREE.Color("#ffffff");
         material.metalness = 0.08;
@@ -120,7 +120,7 @@ function SceneCamera({ focus, radius }: { focus: THREE.Vector3; radius: number }
   return null;
 }
 
-function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wrapWidthMm, debug }: Props) {
+function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wrapWidthMm, uvTransform, debugUv }: Props) {
   const { scene } = useGLTF(meshPath);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const previousTextureRef = useRef<THREE.CanvasTexture | null>(null);
@@ -132,13 +132,12 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
 
   useEffect(() => {
     configureBodyMaterials(cloned, bodyColor);
-    // Find or create wrap mesh
     const existing = findWrapMesh(cloned);
-    if (!existing && debug) {
+    if (!existing && debugUv) {
       console.warn("[3D Preview] No wrap mesh found in loaded model");
     }
     debugRef.current.wrapMesh = existing;
-  }, [cloned, bodyColor, debug]);
+  }, [cloned, bodyColor, debugUv]);
 
   useEffect(() => {
     const wrapMesh = debugRef.current.wrapMesh;
@@ -161,8 +160,32 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
 
     const applyOverlay = async () => {
       try {
-        if (debug) console.log("[3D Preview] Loading texture from:", overlaySvgPath);
-        const texture = await loadSvgTextureFromPath(overlaySvgPath);
+        if (debugUv) console.log("[3D Preview] Loading texture from:", overlaySvgPath);
+        const response = await fetch(overlaySvgPath, {
+          method: "GET",
+          headers: { Accept: "image/svg+xml,*/*" },
+          mode: "cors"
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: Could not load SVG preview from ${overlaySvgPath}`);
+        }
+
+        const svgText = await response.text();
+        if (!svgText || svgText.trim().length === 0) {
+          throw new Error("SVG content is empty");
+        }
+
+        const texture = await buildWrapTexture({
+          svgText,
+          rotateDeg: placement?.rotation_deg ?? 0,
+          seamX: placement?.seamX_mm ?? 0,
+          wrapEnabled: placement?.wrapEnabled,
+          wrapWidthMm,
+          scale: placement?.scale ?? 1,
+          uvTransform,
+          debugOverlay: { enabled: debugUv }
+        });
+
         if (cancelled || !wrapMesh) {
           texture.dispose();
           return;
@@ -178,11 +201,11 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
             material.transparent = true;
             material.alphaTest = 0.03;
             material.needsUpdate = true;
-            if (debug) console.log("[3D Preview] Texture applied to wrap mesh");
+            if (debugUv) console.log("[3D Preview] Texture applied to wrap mesh");
           }
         }
       } catch (error) {
-        if (debug) console.error("[3D Preview] Failed to load texture:", error);
+        if (debugUv) console.error("[3D Preview] Failed to load texture:", error);
       }
     };
 
@@ -190,30 +213,21 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
     return () => {
       cancelled = true;
     };
-  }, [overlaySvgPath, debug]);
+  }, [overlaySvgPath, debugUv, placement?.rotation_deg, placement?.scale, placement?.seamX_mm, placement?.wrapEnabled, uvTransform, wrapWidthMm]);
 
   useEffect(() => {
     const texture = previousTextureRef.current;
     if (!texture) return;
 
-    const seamShift = wrapWidthMm && wrapWidthMm > 0 ? (placement?.seamX_mm ?? 0) / wrapWidthMm : 0;
-    const rotationShift = (placement?.rotation_deg ?? 0) / 360;
-    const scale = Math.max(placement?.scale ?? 1, 0.15);
-
-    texture.repeat.set(1 / scale, 1);
-    texture.offset.set((seamShift + rotationShift) % 1, 0);
-    texture.needsUpdate = true;
-
-    if (debug) {
-      console.log("[3D Preview] Texture UV updated", {
-        seamShift: seamShift.toFixed(3),
-        rotationShift: rotationShift.toFixed(3),
-        scale: scale.toFixed(2),
-        repeatU: (1 / scale).toFixed(2),
-        offsetU: ((seamShift + rotationShift) % 1).toFixed(3)
-      });
-    }
-  }, [placement?.rotation_deg, placement?.scale, placement?.seamX_mm, wrapWidthMm, debug]);
+    applyWrapTextureTransform(texture, {
+      rotateDeg: placement?.rotation_deg ?? 0,
+      seamX: placement?.seamX_mm ?? 0,
+      wrapEnabled: placement?.wrapEnabled,
+      wrapWidthMm,
+      scale: placement?.scale ?? 1,
+      uvTransform
+    });
+  }, [placement?.rotation_deg, placement?.scale, placement?.seamX_mm, placement?.wrapEnabled, wrapWidthMm, uvTransform]);
 
   useFrame(() => {
     controlsRef.current?.update();
@@ -260,7 +274,7 @@ function MeshScene({ meshPath, overlaySvgPath, colorHex, colorId, placement, wra
   );
 }
 
-export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, className, colorHex, colorId, placement, wrapWidthMm, debug }: Props) {
+export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, className, colorHex, colorId, placement, wrapWidthMm, uvTransform, debugUv }: Props) {
   const [pathState, setPathState] = useState<PathState>("checking");
   const [textureError, setTextureError] = useState<string | null>(null);
 
@@ -275,7 +289,7 @@ export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, classN
         if (cancelled) return;
         if (response.ok) {
           setPathState("ready");
-          if (debug) console.log("[3D Preview] Mesh loaded:", meshPath);
+          if (debugUv) console.log("[3D Preview] Mesh loaded:", meshPath);
         } else {
           setPathState("missing");
           setTextureError(`Mesh returned ${response.status}`);
@@ -284,7 +298,7 @@ export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, classN
         if (!cancelled) {
           setPathState("missing");
           setTextureError(error instanceof Error ? error.message : "Unknown error");
-          if (debug) console.error("[3D Preview] Mesh load error:", error);
+          if (debugUv) console.error("[3D Preview] Mesh load error:", error);
         }
       }
     };
@@ -293,7 +307,7 @@ export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, classN
     return () => {
       cancelled = true;
     };
-  }, [meshPath, debug]);
+  }, [meshPath, debugUv]);
 
   if (pathState === "checking") {
     return <div className={`flex h-full w-full items-center justify-center text-xs text-slate-200 ${className ?? ""}`.trim()}>Loading 3D model…</div>;
@@ -327,7 +341,8 @@ export default function TemplateMeshPreview3D({ meshPath, overlaySvgPath, classN
             colorId={colorId}
             placement={placement}
             wrapWidthMm={wrapWidthMm}
-            debug={debug}
+            uvTransform={uvTransform}
+            debugUv={debugUv}
           />
         </Suspense>
       </Canvas>
