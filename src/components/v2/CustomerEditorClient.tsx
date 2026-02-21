@@ -24,6 +24,17 @@ function buildTemplateObject(style: YetiTemplateStyle) {
   };
 }
 
+function normalizeRotation(deg: number): number {
+  let normalized = deg % 360;
+  if (normalized > 180) normalized -= 360;
+  if (normalized <= -180) normalized += 360;
+  return normalized;
+}
+
+function snapTo90(deg: number): number {
+  return normalizeRotation(Math.round(deg / 90) * 90);
+}
+
 export default function CustomerEditorClient({ initialJobId }: Props) {
   const [job, setJob] = useState<DesignJob | null>(null);
   const [asset, setAsset] = useState<DesignAsset | null>(null);
@@ -148,6 +159,13 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
 
   function setLocalPlacement(nextPlacement: Placement) {
     setJob((prev) => (prev ? { ...prev, placement: nextPlacement } : prev));
+  }
+
+  function rotateByQuarter(step: -90 | 90) {
+    if (!placement) return;
+    const next = { ...placement, rotation_deg: snapTo90(placement.rotation_deg + step) };
+    setLocalPlacement(next);
+    scheduleSave(next);
   }
 
   async function upload(file: File) {
@@ -302,13 +320,42 @@ export default function CustomerEditorClient({ initialJobId }: Props) {
                     const next = { ...placement, scale: Number((e.target as HTMLInputElement).value) };
                     scheduleSave(next);
                   }} /></label>
-                  <label>Rotate° <input type="range" min={-180} max={180} step={1} value={placement.rotation_deg} onChange={(e) => {
-                    const next = { ...placement, rotation_deg: Number(e.target.value) };
-                    setLocalPlacement(next);
-                  }} onPointerUp={(e) => {
-                    const next = { ...placement, rotation_deg: Number((e.target as HTMLInputElement).value) };
-                    scheduleSave(next);
-                  }} /></label>
+                  <div>
+                    <label>Rotate° <input type="range" min={-180} max={180} step={1} value={placement.rotation_deg} onChange={(e) => {
+                      const next = { ...placement, rotation_deg: Number(e.target.value) };
+                      setLocalPlacement(next);
+                    }} onPointerUp={(e) => {
+                      const next = { ...placement, rotation_deg: Number((e.target as HTMLInputElement).value) };
+                      scheduleSave(next);
+                    }} /></label>
+                    <div className="mt-1 flex items-center gap-1">
+                      <button
+                        type="button"
+                        className="rounded border px-2 py-0.5 text-xs"
+                        onClick={() => rotateByQuarter(-90)}
+                      >
+                        ↶ 90°
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded border px-2 py-0.5 text-xs"
+                        onClick={() => rotateByQuarter(90)}
+                      >
+                        ↷ 90°
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded border px-2 py-0.5 text-xs"
+                        onClick={() => {
+                          const next = { ...placement, rotation_deg: snapTo90(placement.rotation_deg) };
+                          setLocalPlacement(next);
+                          scheduleSave(next);
+                        }}
+                      >
+                        Snap 90°
+                      </button>
+                    </div>
+                  </div>
                   <label>Wrap <input type="checkbox" checked={placement.wrapEnabled} onChange={(e) => {
                     const next = { ...placement, wrapEnabled: e.target.checked };
                     setLocalPlacement(next);
