@@ -22,7 +22,13 @@ Set env values:
 STUDIO_ENABLED=true
 STUDIO_PASSWORD=dev-password
 STUDIO_AI_URL=http://localhost:8010
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-4o-mini
 ```
+
+`/api/studio/ai/code-propose` now proxies to `studio-ai` endpoint `POST /v1/code/propose`.
+When `OPENAI_API_KEY` is configured, `studio-ai` generates patch proposals with OpenAI.
+If the key is missing or upstream fails, `studio-ai` returns a safe placeholder patch with warnings.
 
 ## Studio checks
 

@@ -12,7 +12,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const updated = await updateV2Job(id, {
       status: body.status as JobStatus | undefined,
       productionConfig: body.productionConfig as ProductionConfig | undefined,
-      bedLayout: body.bedLayout as BedLayout | undefined
+      bedLayout: body.bedLayout as BedLayout | undefined,
+      bedPresetId: body.bedPresetId as string | undefined,
+      bedLayoutOverrideEnabled: body.bedLayoutOverrideEnabled as boolean | undefined,
+      bedLayoutOverride: body.bedLayoutOverride as BedLayout | undefined,
+      selectedAdminAssetIds: body.selectedAdminAssetIds as string[] | undefined
     });
     if (!updated) {
       return Response.json({ error: { code: "NOT_FOUND", message: "Design job not found" } }, { status: 404 });

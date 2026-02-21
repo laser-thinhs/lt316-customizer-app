@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { defaultDestinationRule, lensPresets, machinePresets, objectPresets, settingsPresets } from "@/core/v2/presets";
-import { BedLayout, DesignJob, JobStatus } from "@/core/v2/types";
+import { BedLayout, BedPreset, DesignJob, JobStatus } from "@/core/v2/types";
 
 type MutationKey = "status" | "production" | "bed" | "none";
 
@@ -49,6 +49,23 @@ function spinner(label: string) {
   return <span className="inline-flex items-center gap-2"><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent" />{label}</span>;
 }
 
+function presetToLayout(preset: BedPreset): BedLayout {
+  return {
+    bedW_mm: preset.bedW_mm,
+    bedH_mm: preset.bedH_mm,
+    grid: { spacing: preset.grid.spacing, offsetX: preset.grid.offsetX_mm, offsetY: preset.grid.offsetY_mm, enabled: preset.grid.enabled },
+    customHoles: preset.holes.customHoles.map((hole) => ({ x: hole.x_mm, y: hole.y_mm })),
+    placedItem: { x: preset.bedW_mm / 2, y: preset.bedH_mm / 2, rotation: 0 },
+    rotaryConfig: {
+      axisY: preset.rotaryDefaults.axisY_mm,
+      chuckX: preset.rotaryDefaults.chuckX_mm,
+      tailstockX: preset.rotaryDefaults.tailstockX_mm,
+      enabled: preset.rotaryDefaults.showRotary,
+      cylinderGhostDiameter: preset.rotaryDefaults.cylinderDiameter_mm
+    }
+  };
+}
+
 export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
   const [job, setJob] = useState<DesignJob | null>(null);
   const [generated, setGenerated] = useState<ArtifactsState | null>(null);
@@ -57,6 +74,7 @@ export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
   const [mutation, setMutation] = useState<MutationKey>("none");
   const [generating, setGenerating] = useState(false);
   const [bedUi, setBedUi] = useState<LocalBedUi>({ snapToGrid: true, showIntersections: false });
+  const [bedPresets, setBedPresets] = useState<BedPreset[]>([]);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   const load = useCallback(async () => {
@@ -69,14 +87,24 @@ export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    fetch("/api/admin/bed-presets")
+      .then((res) => res.json())
+      .then((payload) => setBedPresets(payload.data ?? []))
+      .catch(() => setBedPresets([]));
+  }, []);
+
   async function save(patch: Partial<DesignJob>, key: MutationKey) {
     setError("");
     setMutation(key);
     try {
+      const payloadPatch = patch.bedLayout && (patch.bedLayoutOverrideEnabled ?? job?.bedLayoutOverrideEnabled)
+        ? { ...patch, bedLayoutOverride: patch.bedLayout }
+        : patch;
       const res = await fetch(`/api/admin/design-jobs/${jobId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(patch)
+        body: JSON.stringify(payloadPatch)
       });
       const payload = await res.json();
       if (!res.ok) throw new Error(payload?.error?.message ?? "Failed to save changes");
@@ -128,6 +156,13 @@ export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
   }
 
   const objectPreset = useMemo(() => objectPresets.find((item) => item.id === job?.objectDefinitionId), [job?.objectDefinitionId]);
+  const defaultPreset = useMemo(() => bedPresets.find((item) => item.isDefault) ?? bedPresets[0], [bedPresets]);
+
+  useEffect(() => {
+    if (!job || !defaultPreset) return;
+    if (job.bedPresetId) return;
+    void save({ bedPresetId: defaultPreset.id, bedLayout: job.bedLayout ?? presetToLayout(defaultPreset), bedLayoutOverrideEnabled: false }, "bed");
+  }, [job, defaultPreset]);
 
   if (!job) return <div className="p-6">Loading…</div>;
   const bed = job.bedLayout;
@@ -170,6 +205,13 @@ export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
           disabled={mutation !== "none" || generating}
         >
           {generating ? spinner("Generating…") : "Generate Packet"}
+        </button>
+        <button
+          className="rounded border px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => save({ status: "completed" }, "status")}
+          disabled={mutation !== "none" || generating || job.status === "completed"}
+        >
+          {mutation === "status" ? spinner("Saving…") : "Mark Completed"}
         </button>
       </div>
     </div>
@@ -215,6 +257,41 @@ export default function AdminJobDetailClient({ jobId }: { jobId: string }) {
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <section className="rounded border p-3 text-sm">
         <h2 className="mb-2 font-medium">Bed Mock Editor</h2>
+        <div className="mb-3 grid gap-2 md:grid-cols-2">
+          <label className="block">
+            <span className="text-xs text-slate-500">Use preset</span>
+            <select
+              className="mt-1 w-full rounded border px-2 py-1"
+              value={job.bedPresetId ?? defaultPreset?.id ?? ""}
+              onChange={(e) => {
+                const preset = bedPresets.find((item) => item.id === e.target.value);
+                if (!preset) return;
+                const layout = presetToLayout(preset);
+                void save({
+                  bedPresetId: preset.id,
+                  bedLayout: layout,
+                  bedLayoutOverride: job.bedLayoutOverrideEnabled ? (job.bedLayoutOverride ?? layout) : undefined
+                }, "bed");
+              }}
+            >
+              {bedPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}{preset.isDefault ? " (default)" : ""}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center justify-between rounded border px-3 py-2">
+            <span>Detach / Override</span>
+            <input
+              type="checkbox"
+              checked={!!job.bedLayoutOverrideEnabled}
+              onChange={(e) => {
+                const enabled = e.target.checked;
+                void save({
+                  bedLayoutOverrideEnabled: enabled,
+                  bedLayoutOverride: enabled ? job.bedLayout : undefined
+                }, "bed");
+              }}
+            />
+          </label>
+        </div>
         {bed ? <>
           <div className="relative w-full overflow-hidden rounded bg-slate-950" style={{ aspectRatio: `${bed.bedW_mm} / ${bed.bedH_mm}` }}>
             <svg ref={svgRef} viewBox={`0 0 ${bed.bedW_mm} ${bed.bedH_mm}`} className="h-full w-full select-none">

@@ -1,5 +1,5 @@
 import AdminJobsDashboardClient from "@/components/admin/AdminJobsDashboardClient";
 
-export default function AdminJobsPage() {
+export default function AdminDashboardPage() {
   return <AdminJobsDashboardClient />;
 }

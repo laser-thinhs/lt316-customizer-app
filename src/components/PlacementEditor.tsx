@@ -24,6 +24,7 @@ type Props = {
   placement: PlacementDocument;
   modelImageUrl?: string;
   modelMaskUrl?: string;
+  modelGlbPath?: string;
   onUpdated: (placement: PlacementDocument) => void;
 };
 
@@ -143,7 +144,7 @@ function defaultLayerName(object: PlacementObject, index: number) {
   return object.layerName ?? `${object.kind.replace("_", " ")} ${index + 1}`;
 }
 
-export default function PlacementEditor({ designJobId, placement, modelImageUrl, modelMaskUrl, onUpdated }: Props) {
+export default function PlacementEditor({ designJobId, placement, modelImageUrl, modelMaskUrl, modelGlbPath, onUpdated }: Props) {
   const initialDoc = withFixedCanvasSize(placementDocumentSchema.parse(placement));
   const [doc, setDoc] = useState<PlacementDocument>(initialDoc);
   const [assets, setAssets] = useState<ApiAsset[]>([]);
@@ -174,7 +175,8 @@ export default function PlacementEditor({ designJobId, placement, modelImageUrl,
   const [textureSizePx, setTextureSizePx] = useState<1024 | 2048>(2048);
   const canvasPreviewScale = 0.25;
   const canvasPreviewDpi = Math.max(1, canvasDpi * canvasPreviewScale);
-  const previewModelAssetKey = "default-v1";
+  const previewModelAssetKey = "template-mesh";
+  const previewModelGlbPath = modelGlbPath && modelGlbPath.trim().length > 0 ? modelGlbPath : "/models/yeti/rambler-20oz.glb";
   const [activeArtworkSvg, setActiveArtworkSvg] = useState<ActiveArtworkSvg | null>(null);
   const [isArtworkDragging, setArtworkDragging] = useState(false);
   const [isUploadingArtwork, setUploadingArtwork] = useState(false);
@@ -977,7 +979,10 @@ export default function PlacementEditor({ designJobId, placement, modelImageUrl,
           <h3 className="text-sm font-semibold lg:hidden">Canvas Preview</h3>
           <section className="space-y-3 rounded border border-slate-200 bg-slate-50 p-3 lg:max-h-[52vh] lg:overflow-auto">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold">Canvas Preview</h3>
+              <div>
+                <h3 className="text-sm font-semibold">Canvas Preview</h3>
+                <p className="text-xs text-slate-500">3D GLB: {previewModelGlbPath}</p>
+              </div>
               <div className="inline-flex rounded border border-slate-300 bg-white p-0.5 text-xs">
                 <button
                   type="button"
@@ -1049,9 +1054,9 @@ export default function PlacementEditor({ designJobId, placement, modelImageUrl,
                   </label>
                 </div>
                 <div className="overflow-hidden rounded border border-slate-200 bg-slate-900" style={{ height: "420px" }}>
-                  <GlbPreview assetKey={previewModelAssetKey} artwork={activeArtworkSvg} textureSizePx={textureSizePx} />
+                  <GlbPreview assetKey={previewModelAssetKey} glbPath={previewModelGlbPath} artwork={activeArtworkSvg} textureSizePx={textureSizePx} />
                 </div>
-                <p className="text-xs text-slate-600">Model path: /public/model-assets/{previewModelAssetKey}/model.glb</p>
+                <p className="text-xs text-slate-600">Model path: {previewModelGlbPath}</p>
                 {!activeArtworkSvg ? <p className="text-xs text-amber-700">Upload SVG artwork and add it to canvas to texture WrapArea.</p> : null}
               </>
             )}

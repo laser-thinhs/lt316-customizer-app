@@ -13,6 +13,33 @@ import {
 } from "@/schemas/api";
 import { createDefaultPlacementDocument } from "@/schemas/placement";
 
+type YetiTemplateStyle = {
+  id: string;
+  label: string;
+  meshPath: string;
+};
+
+function parseOunceToken(value: string | undefined | null) {
+  if (!value) return null;
+  const match = value.match(/(\d+)\s*oz/i);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveYetiMeshPath(styles: YetiTemplateStyle[], sku?: string) {
+  if (!styles.length) return null;
+  const skuOz = parseOunceToken(sku);
+  if (skuOz !== null) {
+    const exact = styles.find((style) => {
+      const styleOz = parseOunceToken(`${style.label} ${style.id}`);
+      return styleOz === skuOz;
+    });
+    if (exact?.meshPath) return exact.meshPath;
+  }
+  return styles[0].meshPath ?? null;
+}
+
 const machine = {
   id: "fiber-galvo-300-lens-default",
   name: "Fiber Galvo 300 Lens",
@@ -27,6 +54,7 @@ export default function HomePageClient() {
   const [productsError, setProductsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDbUnavailable, setDbUnavailable] = useState(false);
+  const [yetiStyles, setYetiStyles] = useState<YetiTemplateStyle[]>([]);
 
   const { isCreatingJob, setCreatingJob } = useUIStore();
 
@@ -74,6 +102,24 @@ export default function HomePageClient() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/templates/yeti");
+        if (!res.ok) return;
+        const payload = await res.json() as { data?: { styles?: YetiTemplateStyle[] } };
+        setYetiStyles(Array.isArray(payload.data?.styles) ? payload.data.styles : []);
+      } catch {
+        setYetiStyles([]);
+      }
+    })();
+  }, []);
+
+  const resolvedModelGlbPath = useMemo(
+    () => resolveYetiMeshPath(yetiStyles, job?.productProfile?.sku),
+    [yetiStyles, job?.productProfile?.sku]
+  );
 
   const createJob = async () => {
     const productProfileId = resolvedSelectedProductId;
@@ -209,6 +255,7 @@ export default function HomePageClient() {
             placement={job.placementJson}
             modelImageUrl={job.previewImagePath ?? undefined}
             modelMaskUrl={job.previewMaskImagePath ?? job.productProfile.toolOutlineSvgPath ?? undefined}
+            modelGlbPath={resolvedModelGlbPath ?? undefined}
             onUpdated={(placementJson) => setJob((prev) => (prev ? { ...prev, placementJson } : prev))}
           />
         )}

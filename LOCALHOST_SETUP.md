@@ -56,6 +56,11 @@ cp .env.example .env
 The `.env` file should contain:
 ```env
 DATABASE_URL="postgresql://app:app@localhost:5432/customizer?schema=public"
+STUDIO_ENABLED="true"
+STUDIO_PASSWORD="dev-password"
+STUDIO_AI_URL="http://localhost:8010"
+OPENAI_API_KEY="your-openai-api-key"
+OPENAI_MODEL="gpt-4o-mini"
 ```
 
 4. **Set Up Database**
@@ -165,6 +170,23 @@ npm run test:watch
 3. Test your changes at http://localhost:3000
 4. Run tests: `npm test`
 5. Lint code: `npm run lint`
+
+### GitHub PR Tip
+
+If GitHub does not show a **Create pull request** button for your branch, the branch may have no file diff versus `main` (already merged).
+
+Quick recovery:
+
+```bash
+git checkout main
+git pull --ff-only origin main
+git checkout -b feat/<new-change>
+git push -u origin feat/<new-change>
+```
+
+Then open:
+
+`https://github.com/laser-thinhs/lt316-customizer-app/pull/new/feat/<new-change>`
 
 ### Stopping the Application
 
